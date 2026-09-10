@@ -8,6 +8,7 @@ from app.core.config import Settings
 from app.core.exceptions import (
     CorruptedFileError,
     EmptyFileError,
+    FileTooLargeError,
     PageLimitExceededError,
     UnsupportedFileTypeError,
 )
@@ -40,6 +41,13 @@ class DocumentValidationService:
         if not content:
             logger.warning("Rejected empty upload: %s", filename)
             raise EmptyFileError(f"Uploaded file '{filename}' is empty.")
+
+        size_mb = len(content) / (1024 * 1024)
+        if size_mb > self.settings.max_upload_size_mb:
+            logger.warning("Rejected %s: %.1fMB exceeds limit of %sMB", filename, size_mb, self.settings.max_upload_size_mb)
+            raise FileTooLargeError(
+                f"File is {size_mb:.1f}MB; the maximum supported size is {self.settings.max_upload_size_mb}MB."
+            )
 
         content_type = _sniff_content_type(content)
         if content_type is None or content_type not in self.settings.allowed_content_types:

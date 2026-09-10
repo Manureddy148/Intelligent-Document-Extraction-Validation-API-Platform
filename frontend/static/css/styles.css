@@ -165,6 +165,21 @@ tr.clickable-row:hover {
   word-break: break-word;
 }
 
+.field-item .value .period {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.field-item .value .period em {
+  display: inline-block;
+  min-width: 108px;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .field-item.missing .value {
   color: var(--fail);
   font-weight: 400;

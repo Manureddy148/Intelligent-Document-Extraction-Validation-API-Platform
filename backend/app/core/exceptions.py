@@ -23,6 +23,11 @@ class EmptyFileError(AppError):
     status_code = 400
 
 
+class FileTooLargeError(AppError):
+    code = "FILE_TOO_LARGE"
+    status_code = 413
+
+
 class CorruptedFileError(AppError):
     code = "CORRUPTED_FILE"
     status_code = 400

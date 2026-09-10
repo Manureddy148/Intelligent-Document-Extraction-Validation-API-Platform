@@ -13,8 +13,9 @@ templates = Jinja2Templates(directory=str(FRONTEND_TEMPLATES_DIR))
 async def dashboard(request: Request) -> HTMLResponse:
     settings = get_settings()
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
-        {"request": request, "app_name": settings.app_name, "api_prefix": settings.api_v1_prefix},
+        {"app_name": settings.app_name, "api_prefix": settings.api_v1_prefix},
     )
 
 
@@ -22,9 +23,9 @@ async def dashboard(request: Request) -> HTMLResponse:
 async def document_result(request: Request, document_name: str) -> HTMLResponse:
     settings = get_settings()
     return templates.TemplateResponse(
+        request,
         "document_result.html",
         {
-            "request": request,
             "app_name": settings.app_name,
             "api_prefix": settings.api_v1_prefix,
             "document_name": document_name,

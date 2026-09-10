@@ -8,14 +8,19 @@ _TAX_RATE_RE = re.compile(r"\b(?:GST|SST|VAT|TAX)\s*[:\-]?\s*(\d{1,2}(?:\.\d+)?)
 _TAX_AMOUNT_INLINE_RE = re.compile(
     r"\b(?:GST|SST|VAT|TAX)\s*(?:\d{1,2}(?:\.\d+)?\s*%)?\s*[+:\-]?\s*(\d[\d,]*\.\d{2})\b", re.IGNORECASE
 )
+# The trailing \b on the keyword stops "inv" matching inside the word
+# "INVOICE" (which would capture "OICE" from a "TAX INVOICE" heading), and the
+# captured reference must contain a digit so a following word is not mistaken
+# for an identifier.
 _TAX_ID_RE = re.compile(
-    r"\b(?:GST|SST|VAT|TAX|TIN|GSTIN)\s*(?:No\.?|ID|Reg(?:istration)?(?:\s*No\.?)?)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-/]{5,})",
+    r"\b(?:GST|SST|VAT|TAX|TIN|GSTIN)\b\s*(?:No\.?|ID|Reg(?:istration)?(?:\s*No\.?)?)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-/]{5,})",
     re.IGNORECASE,
 )
 _INVOICE_NO_RE = re.compile(
-    r"\b(?:invoice|receipt|bill|doc(?:ument)?|ref(?:erence)?|trn|inv)\s*(?:no\.?|number|#|id)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-/]{2,})",
+    r"\b(?:invoice|receipt|bill|document|doc|reference|ref|trn|inv)\b\s*(?:no\.?|number|#|id)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-/]{2,})",
     re.IGNORECASE,
 )
+_HAS_DIGIT_RE = re.compile(r"\d")
 _TOTAL_QTY_RE = re.compile(r"total\s*(?:qty|quantity)\s*[:\-]?\s*(\d+(?:[.,]\d+)?)", re.IGNORECASE)
 _ADDRESS_HINT_RE = re.compile(r"\b(?:jalan|jln|no\.?\s*\d|street|st\.|road|rd\.|taman|lot|floor|avenue|ave)\b", re.IGNORECASE)
 
@@ -103,13 +108,13 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
 
         if ctx.vendor_tax_id is None:
             tax_id = _TAX_ID_RE.search(line)
-            if tax_id and not _MONEY_RE.search(line):
+            if tax_id and not _MONEY_RE.search(line) and _HAS_DIGIT_RE.search(tax_id.group(1)):
                 ctx.vendor_tax_id = tax_id.group(1)
                 ctx.record("vendor_tax_id", page_number, line)
 
         if ctx.invoice_number is None:
             invoice_no = _INVOICE_NO_RE.search(line)
-            if invoice_no and not _MONEY_RE.search(line):
+            if invoice_no and not _MONEY_RE.search(line) and _HAS_DIGIT_RE.search(invoice_no.group(1)):
                 ctx.invoice_number = invoice_no.group(1)
                 ctx.record("invoice_number", page_number, line)
 

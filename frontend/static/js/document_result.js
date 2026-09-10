@@ -20,10 +20,29 @@
     return `<span class="badge ${cls}">${normalized || "UNKNOWN"}</span>`;
   }
 
+  function formatNumber(value) {
+    if (typeof value !== "number") return String(value);
+    return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // A statement field holds one value per reporting period; an invoice field
+  // holds a single value.
   function formatValue(value) {
     if (value === null || value === undefined) return null;
-    if (typeof value === "object") return JSON.stringify(value);
-    return String(value);
+    if (typeof value === "object") {
+      const entries = Object.entries(value).filter(([, v]) => v !== null && v !== undefined);
+      if (!entries.length) return null;
+      return entries
+        .map(([period, v]) => `<span class="period"><em>${escapeHtml(period)}</em>${formatNumber(v)}</span>`)
+        .join("");
+    }
+    return escapeHtml(formatNumber(value));
   }
 
   function renderFields(extractedData) {
@@ -38,7 +57,7 @@
       item.className = `field-item${isMissing ? " missing" : ""}`;
       const pageInfo = field.page_number ? ` (p.${field.page_number})` : "";
       item.innerHTML = `
-        <div class="label">${key.replace(/_/g, " ")}</div>
+        <div class="label">${escapeHtml(key.replace(/_/g, " "))}</div>
         <div class="value">${isMissing ? "Not found" : formatted}${pageInfo}</div>
       `;
       fieldsGrid.appendChild(item);
@@ -50,7 +69,9 @@
     if (!items || !items.length) return "";
     const rows = items
       .map(
-        (li) => `<tr><td>${li.description}</td><td>${li.quantity}</td><td>${li.unit_price}</td><td>${li.amount}</td></tr>`
+        (li) =>
+          `<tr><td>${escapeHtml(li.description)}</td><td>${formatNumber(li.quantity)}</td>` +
+          `<td>${formatNumber(li.unit_price)}</td><td>${formatNumber(li.amount)}</td></tr>`
       )
       .join("");
     return `
@@ -71,13 +92,16 @@
       const rows = items
         .map((item) => {
           const cells = (periods || [])
-            .map((p) => `<td>${item.values && item.values[p] !== null && item.values[p] !== undefined ? item.values[p] : "-"}</td>`)
+            .map((p) => {
+              const v = item.values ? item.values[p] : null;
+              return `<td>${v === null || v === undefined ? "-" : formatNumber(v)}</td>`;
+            })
             .join("");
-          return `<tr><td>${item.label}</td>${cells}</tr>`;
+          return `<tr><td>${escapeHtml(item.label)}</td>${cells}</tr>`;
         })
         .join("");
       html += `
-        <h3>${sectionName.replace(/_/g, " ")}</h3>
+        <h3>${escapeHtml(sectionName.replace(/_/g, " "))}</h3>
         <table>
           <thead><tr><th>Line item</th>${periodHeaders}</tr></thead>
           <tbody>${rows}</tbody>
@@ -93,11 +117,11 @@
       const row = document.createElement("tr");
       const statusClass = check.status === "FAIL" ? "fail" : check.status === "NOT_APPLICABLE" ? "na" : "";
       row.innerHTML = `
-        <td>${check.name}</td>
-        <td>${check.formula}</td>
-        <td class="${statusClass}">${check.calculated_value ?? "-"}</td>
-        <td class="${statusClass}">${check.reported_value ?? "-"}</td>
-        <td class="${statusClass}">${check.variance ?? "-"}</td>
+        <td>${escapeHtml(check.name)}</td>
+        <td>${escapeHtml(check.formula)}</td>
+        <td class="${statusClass}">${check.calculated_value === null ? "-" : formatNumber(check.calculated_value)}</td>
+        <td class="${statusClass}">${check.reported_value === null ? "-" : formatNumber(check.reported_value)}</td>
+        <td class="${statusClass}">${check.variance === null ? "-" : formatNumber(check.variance)}</td>
         <td>${badgeFor(check.status)}</td>
       `;
       checksTbody.appendChild(row);

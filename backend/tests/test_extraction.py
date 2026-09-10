@@ -219,3 +219,16 @@ def test_llm_failure_falls_back_silently(monkeypatch):
 
     monkeypatch.setattr(service, "_call_model", _boom)
     assert service.recover_missing_fields("text", "invoice", ["total_amount"]) == {}
+
+
+def test_invoice_heading_is_not_mistaken_for_an_identifier():
+    """'TAX INVOICE' is a heading, not a tax id or an invoice number."""
+    ctx = parse_invoice([(1, "TAX INVOICE"), (1, "COUNTER 1 CASHIER: HOCK")])
+    assert ctx.invoice_number is None
+    assert ctx.vendor_tax_id is None
+
+
+def test_invoice_identifiers_are_read_when_present():
+    ctx = parse_invoice([(1, "TRN: 1CRO576494"), (1, "GST No. : 001603310720")])
+    assert ctx.invoice_number == "1CRO576494"
+    assert ctx.vendor_tax_id == "001603310720"

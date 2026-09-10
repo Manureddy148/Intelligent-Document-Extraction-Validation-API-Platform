@@ -57,3 +57,28 @@ def test_get_unknown_document_returns_404(client):
     response = client.get("/api/v1/documents/does-not-exist.pdf")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "DOCUMENT_NOT_FOUND"
+
+
+def test_dashboard_page_renders(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Process a document" in response.text
+    assert "/static/js/dashboard.js" in response.text
+
+
+def test_document_result_page_renders(client):
+    response = client.get("/documents/example.pdf")
+    assert response.status_code == 200
+    assert 'data-document-name="example.pdf"' in response.text
+
+
+def test_static_assets_are_served(client):
+    assert client.get("/static/css/styles.css").status_code == 200
+    assert client.get("/static/js/dashboard.js").status_code == 200
+
+
+def test_openapi_schema_documents_the_required_endpoints(client):
+    schema = client.get("/openapi.json").json()
+    for path in ["/api/v1/documents/process", "/api/v1/documents", "/api/v1/documents/{document_name}", "/api/v1/health"]:
+        assert path in schema["paths"], f"{path} missing from OpenAPI schema"

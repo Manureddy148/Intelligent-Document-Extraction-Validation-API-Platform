@@ -49,3 +49,19 @@ def test_rejects_page_limit_exceeded(validation_service, blank_pdf_bytes):
 
     with pytest.raises(PageLimitExceededError):
         validation_service.validate("too_long.pdf", buffer.getvalue())
+
+
+def test_managed_postgres_url_is_normalised_for_sqlalchemy():
+    """Render/Heroku hand out `postgres://`, which SQLAlchemy 2 refuses to parse."""
+    from app.core.database import _normalise_database_url
+
+    assert _normalise_database_url("postgres://user:pw@host:5432/db") == "postgresql+psycopg2://user:pw@host:5432/db"
+    assert _normalise_database_url("sqlite:///./data/documents.db") == "sqlite:///./data/documents.db"
+
+
+def test_rejects_oversized_upload(validation_service):
+    from app.core.exceptions import FileTooLargeError
+
+    oversized = b"%PDF-1.4" + b"0" * (get_settings().max_upload_size_mb * 1024 * 1024 + 1)
+    with pytest.raises(FileTooLargeError):
+        validation_service.validate("huge.pdf", oversized)
