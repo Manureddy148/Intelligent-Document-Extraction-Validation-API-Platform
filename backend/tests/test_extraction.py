@@ -304,3 +304,33 @@ def test_invoice_total_check_passes_when_all_parts_are_present():
     result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
     check = next(c for c in result.checks if c.name == "invoice_total_check")
     assert check.status == ValidationStatus.PASS
+
+
+def test_receipt_line_items_span_two_rows():
+    """Receipts print the description on one row and its figures on the next."""
+    ctx = parse_invoice([
+        (1, "Smoked Duck Spaghetti"),
+        (1, "1x 12.50 12.50 SR"),
+        (1, "Hot Green Tea"),
+        (1, "2x 3.00 6.00 SR"),
+    ])
+    assert [(i.description, i.quantity, i.unit_price, i.amount) for i in ctx.line_items] == [
+        ("Smoked Duck Spaghetti", 1.0, 12.50, 12.50),
+        ("Hot Green Tea", 2.0, 3.00, 6.00),
+    ]
+
+
+def test_tax_exclusive_and_inclusive_totals_are_told_apart():
+    ctx = parse_invoice([
+        (1, "Total (Excluding GST): 28.58"),
+        (1, "GST payable (6%): 1,72"),
+        (1, "Total (Inclusive of GST): 30.30"),
+    ])
+    assert ctx.subtotal == 28.58
+    assert ctx.tax_amount == 1.72   # OCR wrote the decimal point as a comma
+    assert ctx.total_amount == 30.30
+
+
+def test_comma_thousands_separator_is_not_read_as_a_decimal():
+    ctx = parse_invoice([(1, "Total 1,720.00")])
+    assert ctx.total_amount == 1720.00

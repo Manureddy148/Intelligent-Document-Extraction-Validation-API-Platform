@@ -3,7 +3,10 @@ from dataclasses import dataclass, field
 
 _DATE_RE = re.compile(r"\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b")
 _TIME_RE = re.compile(r"\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)\b", re.IGNORECASE)
-_MONEY_RE = re.compile(r"(-?\d[\d,]*\.\d{2})\b")
+# OCR frequently reads a decimal point as a comma ("1,72" for 1.72), so a
+# two-digit group after a comma is a decimal while a three-digit group is a
+# thousands separator.
+_MONEY_RE = re.compile(r"(-?\d[\d,]*[.,]\d{2})(?!\d)")
 _TAX_RATE_RE = re.compile(r"\b(?:GST|SST|VAT|TAX)\s*[:\-]?\s*(\d{1,2}(?:\.\d+)?)\s*%", re.IGNORECASE)
 _TAX_AMOUNT_INLINE_RE = re.compile(
     r"\b(?:GST|SST|VAT|TAX)\s*(?:\d{1,2}(?:\.\d+)?\s*%)?\s*[+:\-]?\s*(\d[\d,]*\.\d{2})\b", re.IGNORECASE
@@ -48,11 +51,29 @@ _LINE_ITEM_LEADING_QTY_RE = re.compile(
 
 _VENDOR_NAME_SEARCH_ROWS = 6
 
+# "1x 12.50 12.50 SR" - quantity, unit price, line amount, tax code.
+_QTY_X_PRICE_RE = re.compile(
+    r"^(?P<qty>\d+(?:\.\d+)?)\s*[xX]\s*(?P<unit_price>\d[\d,]*[.,]\d{2})\s+"
+    r"(?P<amount>\d[\d,]*[.,]\d{2})\s*[A-Za-z]{0,3}$"
+)
+_SUBTOTAL_LABEL_RE = re.compile(r"sub\s*total|total\s*\(?\s*(?:excl|before|exclusive)", re.IGNORECASE)
+_TAX_LABEL_RE = re.compile(r"\b(?:gst|sst|vat|tax)\b.*(?:payable|amount|charged)|\b(?:gst|sst|vat)\s*\(", re.IGNORECASE)
+
 _TOTAL_EXCLUSIONS = ("qty", "quantity", "item", "count", "summary")
 
 
+def _parse_money(token: str) -> float | None:
+    token = token.strip()
+    if re.fullmatch(r"-?\d+,\d{2}", token):  # "1,72" -> 1.72
+        token = token.replace(",", ".")
+    try:
+        return float(token.replace(",", ""))
+    except ValueError:
+        return None
+
+
 def _money_values(line: str) -> list[float]:
-    return [float(match.replace(",", "")) for match in _MONEY_RE.findall(line)]
+    return [value for value in (_parse_money(m) for m in _MONEY_RE.findall(line)) if value is not None]
 
 
 def _last_money(line: str) -> float | None:
@@ -103,6 +124,7 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
     line is absent, so unreadable fields stay null.
     """
     ctx = InvoiceContext()
+    previous_description: str | None = None
     full_text = "\n".join(line for _, line in lines_with_pages)
 
     for row_index, (page_number, raw_line) in enumerate(lines_with_pages):
@@ -156,13 +178,17 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
                 ctx.tax_rate_percent = float(rate_match.group(1))
                 ctx.record("tax_rate_percent", page_number, line)
 
-        if ctx.tax_amount is None:
+        if ctx.tax_amount is None and "total" not in lowered:
             tax_match = _TAX_AMOUNT_INLINE_RE.search(line)
-            if tax_match and "total" not in lowered:
-                ctx.tax_amount = float(tax_match.group(1).replace(",", ""))
+            value = _parse_money(tax_match.group(1)) if tax_match else None
+            if value is None and _TAX_LABEL_RE.search(line):
+                value = _last_money(line)
+            if value is not None:
+                ctx.tax_amount = value
                 ctx.record("tax_amount", page_number, line)
 
-        if "sub total" in lowered or "subtotal" in lowered:
+        is_subtotal_line = bool(_SUBTOTAL_LABEL_RE.search(line))
+        if is_subtotal_line:
             value = _last_money(line)
             if value is not None:
                 ctx.subtotal = value
@@ -178,7 +204,7 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
         if quantity_match:
             ctx.total_quantity = float(quantity_match.group(1).replace(",", "."))
             ctx.record("total_quantity", page_number, line)
-        elif "total" in lowered and not any(token in lowered for token in _TOTAL_EXCLUSIONS):
+        elif "total" in lowered and not is_subtotal_line and not any(token in lowered for token in _TOTAL_EXCLUSIONS):
             value = _last_money(line)
             if value is not None:
                 ctx.total_amount = value
@@ -198,6 +224,24 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
                 ctx.change = value
                 ctx.record("change", page_number, line)
 
+        qty_x_match = _QTY_X_PRICE_RE.match(line)
+        if qty_x_match and previous_description:
+            unit_price = _parse_money(qty_x_match.group("unit_price"))
+            amount = _parse_money(qty_x_match.group("amount"))
+            if unit_price is not None and amount is not None:
+                ctx.line_items.append(
+                    InvoiceLineItem(
+                        description=previous_description,
+                        quantity=float(qty_x_match.group("qty")),
+                        unit_price=unit_price,
+                        amount=amount,
+                        page_number=page_number,
+                        source_text=f"{previous_description} / {line}",
+                    )
+                )
+            previous_description = None
+            continue
+
         for pattern in (_LINE_ITEM_TRAILING_QTY_RE, _LINE_ITEM_LEADING_QTY_RE):
             item_match = pattern.match(line)
             if item_match:
@@ -212,6 +256,11 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
                     )
                 )
                 break
+        else:
+            if not _MONEY_RE.search(line) and len(re.sub(r"[^A-Za-z]", "", line)) >= 3:
+                previous_description = line
+            elif _MONEY_RE.search(line):
+                previous_description = None
 
     if ctx.tax_inclusive is None and ctx.tax_amount is not None and ctx.subtotal is None:
         ctx.tax_inclusive = True

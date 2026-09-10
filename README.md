@@ -343,7 +343,7 @@ use the managed database so processed results survive a restart.
 ## Testing
 
 ```bash
-cd backend && pytest            # 42 tests
+cd backend && pytest            # 45 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size
@@ -361,20 +361,30 @@ unreadable scan, the dashboard list, and every error case.
 
 ## Measured accuracy on the provided dataset
 
-Running all 30 statements in the supplied dataset (2017–2026) through the
-pipeline and counting how many financial checks reconcile — a check only passes
-if the numbers extracted from the document genuinely add up:
+Every one of the **50 documents** in the supplied dataset — 30 statements
+(2017–2026) and all 20 invoice images — was posted to the running API and the
+financial checks counted. A check only passes if the numbers extracted from the
+document genuinely add up, so this doubles as an extraction-accuracy measure.
 
-| Document type | PASS | FAIL | NOT_APPLICABLE |
-| --- | --- | --- | --- |
-| Balance sheet | 44 | 1 | 15 |
-| Profit & loss | 72 | 6 | 22 |
-| Cash flow | 32 | 0 | 8 |
-| **Total** | **148** | **7** | **45** |
+| Document type | Docs | PASS | FAIL | NOT_APPLICABLE |
+| --- | --- | --- | --- | --- |
+| Balance sheet | 10 | 44 | 1 | 15 |
+| Profit & loss | 10 | 72 | 6 | 22 |
+| Cash flow | 10 | 32 | 0 | 8 |
+| Invoice | 20 | 13 | 3 | 19 |
+| **Total** | **50** | **209** | **10** | **64** |
 
-Clean scans reconcile fully (2017, 2018, 2023, 2026 pass every check). The
-`NOT_APPLICABLE` results concentrate in the 2020–2022 scans, where OCR cannot
-recover the row labels at all.
+All 50 returned HTTP 200 with no crash; 48 finished `processing_status: PASS`
+and 2 (the 2022 statements) `FAILED` because their scans are too poor to yield
+any key field. Median processing time 1.8 s, maximum 4.8 s.
+
+Clean statement scans reconcile fully (2017, 2018, 2023, 2026 pass every
+check). The `NOT_APPLICABLE` results concentrate in the 2020–2022 statement
+scans, where OCR cannot recover the row labels, and in receipts that print
+neither a subtotal/tax pair nor a cash/change pair — there is simply nothing to
+reconcile. The invoice `FAIL`s are genuine: on those receipts OCR misread
+digits (`1x 12.58 12.50`), so the printed figures do not add up as read, which
+is exactly what the check exists to surface.
 
 Every default in the OCR path was chosen by re-running this benchmark rather
 than by assumption:
@@ -384,7 +394,8 @@ than by assumption:
 | Starting point (heading-based sections, colour input) | 132 PASS / 8 FAIL / 60 N/A |
 | Sections also open on their first line item, not just a heading | 136 / 8 / 56 |
 | Greyscale before OCR | 144 / 11 / 45 |
-| Rejoin figures OCR split in half | **148 / 7 / 45** |
+| Rejoin figures OCR split in half | **148 / 7 / 45** on statements |
+| Two-row receipt line items, tax-exclusive/inclusive totals, comma decimals | **209 / 10 / 64** across all 50 documents |
 | 300 DPI instead of 200 | 127 / 16 / 57 — *rejected* |
 | Second colour OCR pass unioned with the first | 149 / 7 / 44 for 2× the latency — *rejected* |
 
