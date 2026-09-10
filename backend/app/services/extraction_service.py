@@ -7,11 +7,11 @@ from app.services.ocr_service import PageText
 from app.utils.invoice_parsing import InvoiceContext, parse_invoice
 from app.utils.layout import LayoutRow, detect_period_columns
 from app.utils.statement_sections import (
-    BALANCE_SHEET_SECTION_MARKERS,
+    BALANCE_SHEET_SPEC,
     BALANCE_SHEET_STOP_MARKERS,
-    CASH_FLOW_SECTION_MARKERS,
+    CASH_FLOW_SPEC,
     CASH_FLOW_STOP_MARKERS,
-    PROFIT_AND_LOSS_SECTION_MARKERS,
+    PROFIT_AND_LOSS_SPEC,
     PROFIT_AND_LOSS_STOP_MARKERS,
     find_in_sections,
     find_preferring_section,
@@ -160,7 +160,7 @@ class ExtractionService:
         self, rows: list[LayoutRow], periods, page_anchors, ocr_used, pages_processed
     ) -> ExtractionOutcome:
         sections = scan_sections(
-            rows, BALANCE_SHEET_SECTION_MARKERS, BALANCE_SHEET_STOP_MARKERS, periods, page_anchors
+            rows, BALANCE_SHEET_SPEC, BALANCE_SHEET_STOP_MARKERS, periods, page_anchors
         )
         currency, unit, unit_source = _detect_currency_and_unit([row.text for row in rows])
 
@@ -214,7 +214,7 @@ class ExtractionService:
         self, rows: list[LayoutRow], periods, page_anchors, ocr_used, pages_processed
     ) -> ExtractionOutcome:
         sections = scan_sections(
-            rows, PROFIT_AND_LOSS_SECTION_MARKERS, PROFIT_AND_LOSS_STOP_MARKERS, periods, page_anchors
+            rows, PROFIT_AND_LOSS_SPEC, PROFIT_AND_LOSS_STOP_MARKERS, periods, page_anchors
         )
         currency, unit, unit_source = _detect_currency_and_unit([row.text for row in rows])
 
@@ -271,7 +271,7 @@ class ExtractionService:
     def _extract_cash_flow(
         self, rows: list[LayoutRow], periods, page_anchors, ocr_used, pages_processed
     ) -> ExtractionOutcome:
-        sections = scan_sections(rows, CASH_FLOW_SECTION_MARKERS, CASH_FLOW_STOP_MARKERS, periods, page_anchors)
+        sections = scan_sections(rows, CASH_FLOW_SPEC, CASH_FLOW_STOP_MARKERS, periods, page_anchors)
         currency, unit, unit_source = _detect_currency_and_unit([row.text for row in rows])
 
         # Within a cash-flow section the only "net cash" row is that section's

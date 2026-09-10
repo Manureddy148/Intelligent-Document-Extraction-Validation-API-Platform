@@ -71,13 +71,33 @@ class LayoutRow:
         return [word for word in self.words if word.is_date()]
 
 
+_GROUPED_NUMBER_RE = re.compile(r"^\(?-?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?$")
+
+
+def _is_number_fragment_pair(left: Word, right: Word) -> bool:
+    """True when two touching tokens are one long number OCR split in half.
+
+    Tesseract regularly breaks a figure like 11,031,861,695 into "11,031" and
+    ",861,695". Taken separately the first fragment reads as a plausible value
+    and the real number is lost, so they are rejoined when they sit flush
+    against each other and only form a valid grouped number together.
+    """
+    gap = right.x0 - left.x1
+    if gap > max(left.height * 0.35, 8.0) or gap < -2.0:
+        return False
+    if not (left.text[-1:].isdigit() and (right.text[:1].isdigit() or right.text[:1] == ",")):
+        return False
+    return bool(_GROUPED_NUMBER_RE.match(left.text + right.text))
+
+
 def _merge_bracket_tokens(words: list[Word]) -> list[Word]:
-    """Rejoin numbers OCR split around brackets, e.g. '(', '87,543)' -> '(87,543)'."""
+    """Rejoin numbers OCR split around brackets or mid-figure."""
     merged: list[Word] = []
     for word in words:
         if merged and (
             (merged[-1].text == "(" and word.text.endswith(")"))
             or (merged[-1].text.startswith("(") and not merged[-1].text.endswith(")") and word.text == ")")
+            or _is_number_fragment_pair(merged[-1], word)
         ):
             previous = merged.pop()
             merged.append(

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import pdfplumber
 import pytesseract
 from pdf2image import convert_from_bytes
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.core.config import Settings
 from app.core.exceptions import ExtractionFailedError
@@ -80,6 +80,16 @@ class OcrService:
             return [self._ocr_image(image, 1)]
 
     def _ocr_image(self, image: Image.Image, page_number: int) -> PageText:
+        """OCR a page. Dropping colour first recovers thin type on faint scans."""
+        rows = group_words_into_rows(self._ocr_words(ImageOps.grayscale(image)), page_number)
+        return PageText(
+            page_number=page_number,
+            text="\n".join(row.text for row in rows),
+            ocr_used=True,
+            rows=rows,
+        )
+
+    def _ocr_words(self, image: Image.Image) -> list[Word]:
         config = f"--psm {self.settings.ocr_psm}"
         data = pytesseract.image_to_data(image, config=config, output_type=pytesseract.Output.DICT)
 
@@ -100,6 +110,4 @@ class OcrService:
                 )
             )
 
-        rows = group_words_into_rows(words, page_number)
-        text = "\n".join(row.text for row in rows)
-        return PageText(page_number=page_number, text=text, ocr_used=True, rows=rows)
+        return words

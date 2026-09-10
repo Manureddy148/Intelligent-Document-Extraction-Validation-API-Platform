@@ -232,3 +232,30 @@ def test_invoice_identifiers_are_read_when_present():
     ctx = parse_invoice([(1, "TRN: 1CRO576494"), (1, "GST No. : 001603310720")])
     assert ctx.invoice_number == "1CRO576494"
     assert ctx.vendor_tax_id == "001603310720"
+
+
+def test_number_split_across_tokens_is_rejoined():
+    """OCR breaks long figures in half; the fragments must not read as a value."""
+    header = [_word("31-Mar-19", 1296, top=10), _word("31-Mar-18", 1532, top=10)]
+    # "11,031,861,695" came back as "11,031" + ",861,695" sitting flush together.
+    row = [
+        _word("Total", 1019, top=40, width=50),
+        _word("12,928,057,065", 1300, top=40, width=154),
+        _word("11,031", 1442, top=40, width=61),
+        _word(",861,695", 1532, top=40, width=83),
+    ]
+    rows = group_words_into_rows(header + row, 1)
+    _, anchors = detect_period_columns(rows)
+    label, values = split_row(rows[-1], anchors)
+    assert label == "Total"
+    assert values == {0: 12928057065.0, 1: 11031861695.0}
+
+
+def test_separate_column_values_are_not_merged():
+    """Two real values in different columns sit far apart and must stay separate."""
+    header = [_word("31-Mar-19", 1296, top=10), _word("31-Mar-18", 1532, top=10)]
+    row = [_word("Capital", 300, top=40), _word("5,446,613", 1296, top=40), _word("5,190,181", 1532, top=40)]
+    rows = group_words_into_rows(header + row, 1)
+    _, anchors = detect_period_columns(rows)
+    label, values = split_row(rows[-1], anchors)
+    assert values == {0: 5446613.0, 1: 5190181.0}
