@@ -1,0 +1,9 @@
+[project]
+name = "intelligent-document-extraction-validation-api-platform"
+version = "0.1.0"
+description = "API platform for extracting structured fields from documents and validating them"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
