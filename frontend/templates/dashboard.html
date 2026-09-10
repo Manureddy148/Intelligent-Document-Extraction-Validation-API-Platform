@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }}</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body data-api-prefix="{{ api_prefix }}">
+  <header class="app-header">
+    <h1>{{ app_name }}</h1>
+  </header>
+  <main>
+    <section class="card">
+      <h2>Process a document</h2>
+      <form id="upload-form" class="upload-form">
+        <div class="field">
+          <label for="document_type">Document type</label>
+          <select id="document_type" name="document_type" required>
+            <option value="invoice">Invoice</option>
+            <option value="balance_sheet">Balance Sheet</option>
+            <option value="profit_and_loss">Profit &amp; Loss</option>
+            <option value="cash_flow_statement">Cash Flow Statement</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="file">Document (PDF / JPG / PNG, up to 3 pages)</label>
+          <input type="file" id="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required />
+        </div>
+        <button type="submit" id="submit-btn">Upload &amp; Process</button>
+      </form>
+      <p id="upload-status" class="status-line"></p>
+    </section>
+
+    <section class="card">
+      <h2>Processed documents</h2>
+      <p class="status-line">Click a row to view extracted fields, tables and validation results.</p>
+      <table id="documents-table">
+        <thead>
+          <tr>
+            <th>Document name</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Processed at</th>
+          </tr>
+        </thead>
+        <tbody id="documents-tbody">
+          <tr><td colspan="4">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1f2933;
+  --muted: #61707d;
+  --accent: #1f5f8b;
+  --pass: #1b7a3d;
+  --fail: #b3261e;
+  --na: #8a6d00;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header.app-header {
+  background: var(--accent);
+  color: #fff;
+  padding: 1rem 1.5rem;
+}
+
+header.app-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+.upload-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.upload-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.upload-form label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+select,
+input[type="file"] {
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.55rem 1.1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+tr.clickable-row {
+  cursor: pointer;
+}
+
+tr.clickable-row:hover {
+  background: #f0f4f8;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge.pass {
+  background: #e3f5e9;
+  color: var(--pass);
+}
+
+.badge.fail {
+  background: #fbe9e7;
+  color: var(--fail);
+}
+
+.badge.na {
+  background: #fff6da;
+  color: var(--na);
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.field-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+
+.field-item .label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.field-item .value {
+  font-size: 1rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.field-item.missing .value {
+  color: var(--fail);
+  font-weight: 400;
+  font-style: italic;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+pre.json-view {
+  background: #0f1720;
+  color: #d4f5dc;
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  max-height: 500px;
+  font-size: 0.8rem;
+}
+
+.status-line {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.error-text {
+  color: var(--fail);
+  font-size: 0.85rem;
+}
+
+.checks-table td.fail {
+  color: var(--fail);
+  font-weight: 600;
+}
+
+.checks-table td.na {
+  color: var(--na);
+}

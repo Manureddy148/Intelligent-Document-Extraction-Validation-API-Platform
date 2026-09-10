@@ -11,3 +11,7 @@ dist/
 build/
 .mypy_cache/
 .ruff_cache/
+*.db
+*.sqlite3
+backend/data/
+.DS_Store

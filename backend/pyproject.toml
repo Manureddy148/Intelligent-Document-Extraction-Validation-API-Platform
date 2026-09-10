@@ -1,0 +1,9 @@
+[project]
+name = "document-intelligence-backend"
+version = "1.0.0"
+description = "Backend API for the Intelligent Document Extraction, Validation & API Platform"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ app_name }} - {{ document_name }}</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body data-api-prefix="{{ api_prefix }}" data-document-name="{{ document_name }}">
+  <header class="app-header">
+    <h1>{{ app_name }}</h1>
+  </header>
+  <main>
+    <a class="back-link" href="/">&larr; Back to dashboard</a>
+    <section class="card" id="summary-card">
+      <h2 id="doc-title">Loading...</h2>
+      <p class="status-line" id="doc-subtitle"></p>
+    </section>
+
+    <section class="card" id="fields-card" hidden>
+      <h2>Extracted fields</h2>
+      <div class="field-grid" id="fields-grid"></div>
+    </section>
+
+    <section class="card" id="line-items-card" hidden>
+      <h2>Tables / line items</h2>
+      <div id="line-items-container"></div>
+    </section>
+
+    <section class="card" id="validation-card" hidden>
+      <h2>Financial validation</h2>
+      <p class="status-line" id="validation-summary"></p>
+      <table class="checks-table">
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Formula</th>
+            <th>Calculated</th>
+            <th>Reported</th>
+            <th>Variance</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="checks-tbody"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>
+        Raw JSON
+        <button id="toggle-json" type="button">Show / hide</button>
+      </h2>
+      <pre class="json-view" id="json-view" hidden></pre>
+    </section>
+  </main>
+  <script src="/static/js/document_result.js"></script>
+</body>
+</html>
