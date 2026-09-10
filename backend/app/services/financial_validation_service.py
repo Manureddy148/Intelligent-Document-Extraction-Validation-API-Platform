@@ -146,13 +146,16 @@ class FinancialValidationService:
                 )
             )
 
-        if ctx.subtotal is not None:
+        if ctx.subtotal is not None and ctx.tax_amount is not None:
+            # A missing tax line is not a zero-rated invoice - it is a line the
+            # document has that OCR did not read, so it cannot be assumed away.
+            # An absent discount genuinely means no discount was applied.
             checks.append(
                 self._compare(
                     name="invoice_total_check",
                     formula="subtotal + tax_amount - discount ≈ total_amount",
                     operands={"subtotal": ctx.subtotal, "tax_amount": ctx.tax_amount, "discount": ctx.discount},
-                    calculated=round(ctx.subtotal + (ctx.tax_amount or 0.0) - (ctx.discount or 0.0), 2),
+                    calculated=round(ctx.subtotal + ctx.tax_amount - (ctx.discount or 0.0), 2),
                     reported=ctx.total_amount,
                 )
             )

@@ -22,6 +22,14 @@ _INVOICE_NO_RE = re.compile(
 )
 _HAS_DIGIT_RE = re.compile(r"\d")
 _TOTAL_QTY_RE = re.compile(r"total\s*(?:qty|quantity)\s*[:\-]?\s*(\d+(?:[.,]\d+)?)", re.IGNORECASE)
+# Receipt headings and OCR noise are not vendor names. A short scrap like
+# "cudd" reads as a real value in the output, which is worse than reporting
+# that the name could not be read.
+_DOCUMENT_HEADING_RE = re.compile(
+    r"^\W*(?:tax\s+)?(?:invoice|receipt|bill|statement|counter|cashier|customers?|orders?|payments?)\b", re.IGNORECASE
+)
+# A line like "Qty UOM U.Price Amt Tax Code" is the line-item column header.
+_COLUMN_HEADER_WORDS = ("qty", "uom", "price", "amt", "amount", "description", "item", "code", "disc")
 _ADDRESS_HINT_RE = re.compile(r"\b(?:jalan|jln|no\.?\s*\d|street|st\.|road|rd\.|taman|lot|floor|avenue|ave)\b", re.IGNORECASE)
 
 # "<description> <qty> <unit price> <amount>" and "<qty> <description> <unit price> <amount>"
@@ -37,6 +45,8 @@ _LINE_ITEM_LEADING_QTY_RE = re.compile(
     r"(?P<unit_price>\d[\d,]*\.\d{2})\s+"
     r"(?P<amount>\d[\d,]*\.\d{2})\s*[A-Z]{0,3}$"
 )
+
+_VENDOR_NAME_SEARCH_ROWS = 6
 
 _TOTAL_EXCLUSIONS = ("qty", "quantity", "item", "count", "summary")
 
@@ -95,11 +105,23 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
     ctx = InvoiceContext()
     full_text = "\n".join(line for _, line in lines_with_pages)
 
-    for page_number, raw_line in lines_with_pages:
+    for row_index, (page_number, raw_line) in enumerate(lines_with_pages):
         line = raw_line.strip()
         lowered = line.lower()
 
-        if ctx.vendor_name is None and len(re.sub(r"[^A-Za-z]", "", line)) >= 4 and not _DATE_RE.search(line):
+        letters = re.sub(r"[^A-Za-z]", "", line)
+        real_words = [w for w in re.split(r"\s+", line) if len(re.sub(r"[^A-Za-z]", "", w)) >= 3]
+        alpha_ratio = len(letters) / max(len(re.sub(r"\s", "", line)), 1)
+        looks_like_a_name = len(letters) >= 5 and len(real_words) >= 2 and alpha_ratio >= 0.7
+        if (
+            ctx.vendor_name is None
+            and row_index < _VENDOR_NAME_SEARCH_ROWS
+            and looks_like_a_name
+            and not _DOCUMENT_HEADING_RE.match(line)
+            and sum(word in lowered for word in _COLUMN_HEADER_WORDS) < 2
+            and not _DATE_RE.search(line)
+            and not _MONEY_RE.search(line)
+        ):
             ctx.vendor_name = line
             ctx.record("vendor_name", page_number, line)
         elif ctx.vendor_address is None and _ADDRESS_HINT_RE.search(line):

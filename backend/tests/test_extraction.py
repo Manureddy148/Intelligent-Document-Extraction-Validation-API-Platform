@@ -259,3 +259,48 @@ def test_separate_column_values_are_not_merged():
     _, anchors = detect_period_columns(rows)
     label, values = split_row(rows[-1], anchors)
     assert values == {0: 5446613.0, 1: 5190181.0}
+
+
+def test_vendor_name_skips_ocr_noise_and_headings():
+    """A 4-letter scrap or a "TAX INVOICE" heading is not a vendor name."""
+    ctx = parse_invoice([(1, "cudd"), (1, "TAX INVOICE"), (1, "FUYI MINI MARKET")])
+    assert ctx.vendor_name == "FUYI MINI MARKET"
+
+
+def test_vendor_name_is_null_when_unreadable():
+    ctx = parse_invoice([(1, "roy"), (1, "O.2 61"), (1, "Total 9.00")])
+    assert ctx.vendor_name is None
+
+
+def test_vendor_name_rejects_symbol_heavy_ocr_noise():
+    """Mostly-punctuation lines are OCR noise, not a vendor name."""
+    ctx = parse_invoice([(1, "<B R WNa.: pity 01"), (1, "FUYI MINI MARKET")])
+    assert ctx.vendor_name == "FUYI MINI MARKET"
+
+
+def test_vendor_name_rejects_line_item_column_headers():
+    ctx = parse_invoice([(1, "Qty UOM U.Price Amt Tax Code"), (1, "BEMED (SP) SDN. BHD.")])
+    assert ctx.vendor_name == "BEMED (SP) SDN. BHD."
+
+
+def test_vendor_name_is_only_taken_from_the_top_of_the_document():
+    """A name-like line far down the page is not the vendor."""
+    lines = [(1, "%%%"), (1, "@@@"), (1, "###"), (1, "***"), (1, "!!!"), (1, "^^^"), (1, "Customers Payment Details")]
+    assert parse_invoice(lines).vendor_name is None
+
+
+def test_invoice_total_check_is_not_applicable_when_tax_was_not_read():
+    """An unread tax line must not be treated as zero and reported as a failure."""
+    ctx = InvoiceContext(subtotal=135.00, tax_amount=None, total_amount=157.48)
+    outcome = ExtractionOutcome({}, ["current"], True, 1, invoice_context=ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+    check = next(c for c in result.checks if c.name == "invoice_total_check")
+    assert check.status == ValidationStatus.NOT_APPLICABLE
+
+
+def test_invoice_total_check_passes_when_all_parts_are_present():
+    ctx = InvoiceContext(subtotal=135.00, tax_amount=22.48, total_amount=157.48)
+    outcome = ExtractionOutcome({}, ["current"], True, 1, invoice_context=ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+    check = next(c for c in result.checks if c.name == "invoice_total_check")
+    assert check.status == ValidationStatus.PASS

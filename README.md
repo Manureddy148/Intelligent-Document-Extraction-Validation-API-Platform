@@ -8,6 +8,20 @@ result, and serves everything through a REST API and a dashboard.
 
 ![Architecture](docs/architecture.png)
 
+The solution presentation is in [`docs/solution_presentation.pdf`](docs/solution_presentation.pdf)
+(also available as `.pptx`), and both it and the diagram above are regenerated
+by the scripts alongside them.
+
+## Repository layout
+
+```
+backend/       FastAPI application, services, repositories, tests
+frontend/      Jinja2 templates and static CSS/JS for the dashboard
+docs/          architecture diagram, solution presentation, screenshots
+sample_outputs/  real API responses for every required scenario
+case_study/    the original brief and the provided sample documents
+```
+
 ## Deployment URLs
 
 | Item | URL |
@@ -74,7 +88,7 @@ A financial check that does not reconcile is a *business* outcome, not a
 processing failure, so it is reported separately under `validation.overall_status`.
 A document can therefore be `processing_status: PASS` with
 `validation.overall_status: FAIL` — see
-`sample_outputs/06_profit_and_loss_2025_validation_failure.json`.
+[`sample_outputs/06_profit_and_loss_2025_validation_failure.json`](sample_outputs/06_profit_and_loss_2025_validation_failure.json).
 
 ## Technology choices
 
@@ -329,18 +343,21 @@ use the managed database so processed results survive a restart.
 ## Testing
 
 ```bash
-cd backend && pytest            # 32 tests
+cd backend && pytest            # 42 tests
 ```
 
-Covering file validation (type sniffing, empty, corrupted, page limit), the
-layout engine (row rebuilding, period detection, lone-value column assignment,
-schedule-column rejection), invoice parsing, every document type's financial
-checks, the LLM pass (disabled, recovery, failure fallback), the API flow
-(process → get-by-name → list), error envelopes, and the HTML routes.
+Covering file validation (type sniffing, empty, corrupted, page limit, size
+limit), the layout engine (row rebuilding, period detection, lone-value column
+assignment, schedule-column rejection, rejoining split figures), invoice
+parsing and its refusal to read headings or OCR noise as values, every document
+type's financial checks, the LLM pass (disabled, recovery, failure fallback),
+the API flow (process → get-by-name → list), error envelopes, and the HTML
+routes.
 
-`sample_outputs/` holds real responses from this code for all four document
-types, a scanned receipt, a validation failure, an unreadable scan, and each
-error case.
+[`sample_outputs/`](sample_outputs/) holds real responses produced by this code:
+all four document types, a two-page statement, scanned receipts (one that
+reconciles, one whose tax line OCR could not read), a validation failure, an
+unreadable scan, the dashboard list, and every error case.
 
 ## Measured accuracy on the provided dataset
 
@@ -350,17 +367,26 @@ if the numbers extracted from the document genuinely add up:
 
 | Document type | PASS | FAIL | NOT_APPLICABLE |
 | --- | --- | --- | --- |
-| Balance sheet | 35 | 2 | 23 |
-| Profit & loss | 67 | 6 | 27 |
-| Cash flow | 30 | 0 | 10 |
-| **Total** | **132** | **8** | **60** |
+| Balance sheet | 44 | 1 | 15 |
+| Profit & loss | 72 | 6 | 22 |
+| Cash flow | 32 | 0 | 8 |
+| **Total** | **148** | **7** | **45** |
 
-Clean scans reconcile fully (2017, 2018, 2023, 2024, 2026 typically pass every
-check). The `NOT_APPLICABLE` results are concentrated in the 2020–2022 scans,
-where OCR cannot recover the row labels at all. Raising DPI does not help —
-measured, 300 DPI scored *worse* (127 PASS / 16 FAIL) than 200 DPI, because it
-changes Tesseract's segmentation; those numbers are why the defaults are what
-they are.
+Clean scans reconcile fully (2017, 2018, 2023, 2026 pass every check). The
+`NOT_APPLICABLE` results concentrate in the 2020–2022 scans, where OCR cannot
+recover the row labels at all.
+
+Every default in the OCR path was chosen by re-running this benchmark rather
+than by assumption:
+
+| Change | Result |
+| --- | --- |
+| Starting point (heading-based sections, colour input) | 132 PASS / 8 FAIL / 60 N/A |
+| Sections also open on their first line item, not just a heading | 136 / 8 / 56 |
+| Greyscale before OCR | 144 / 11 / 45 |
+| Rejoin figures OCR split in half | **148 / 7 / 45** |
+| 300 DPI instead of 200 | 127 / 16 / 57 — *rejected* |
+| Second colour OCR pass unioned with the first | 149 / 7 / 44 for 2× the latency — *rejected* |
 
 ## Known limitations
 
@@ -369,14 +395,16 @@ they are.
   are reported `null` and their checks `NOT_APPLICABLE`. A commercial OCR
   service (Google Document AI, Textract) or the optional LLM pass is the way to
   close this gap; the deterministic path cannot invent what OCR did not read.
-- **Statement parsing is tuned to this dataset's banking format.** Section
-  headings and canonical field names follow Indian bank statement conventions.
+- **Statement parsing is tuned to this dataset's banking format.** Sections are
+  recognised by their headings *and* by the line labels that open them, and both
+  follow Indian bank statement conventions.
   Other layouts still get every labelled row via `line_items`, but the named
   fields and the per-type checks may come back `NOT_APPLICABLE`.
 - **Receipt-style invoices extract fewer fields.** The SROIE images are noisy;
   line items are only captured when a row cleanly matches the
-  description/qty/price/amount shape, and vendor names come from the top line
-  verbatim, OCR errors included.
+  description/qty/price/amount shape. A vendor name is only accepted from the
+  top of the document and only when it reads like words, so an unreadable
+  header returns `null` rather than a scrap of OCR noise.
 - **Period labels degrade to `period_1`/`period_2`** when the header is too
   damaged to read a date (2024 balance sheet OCRs as `March a1,`). Values are
   still assigned to the correct columns.
