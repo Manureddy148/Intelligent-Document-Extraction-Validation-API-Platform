@@ -52,6 +52,8 @@ class ValidationSummary(BaseModel):
 class ProcessingMetadata(BaseModel):
     ocr_used: bool
     ocr_engine: str | None = None
+    extraction_method: str | None = None
+    llm_model: str | None = None
     processed_at: datetime
     processing_time_ms: int
     pages_processed: int

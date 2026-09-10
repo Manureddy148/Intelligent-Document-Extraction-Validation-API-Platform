@@ -15,6 +15,7 @@ from app.schemas.extraction import (
 from app.services.document_validation_service import DocumentValidationService
 from app.services.extraction_service import ExtractionService
 from app.services.financial_validation_service import FinancialValidationService
+from app.services.llm_extraction_service import LlmExtractionService
 from app.services.ocr_service import OcrService
 
 logger = get_logger(__name__)
@@ -46,6 +47,7 @@ class DocumentService:
         self.ocr_service = OcrService(settings)
         self.extraction_service = ExtractionService()
         self.financial_validation_service = FinancialValidationService(settings)
+        self.llm_service = LlmExtractionService(settings)
         self.repository = DocumentRepository(db)
 
     def process(self, filename: str, content: bytes, document_type: DocumentType) -> dict:
@@ -56,6 +58,8 @@ class DocumentService:
 
         pages = self.ocr_service.extract_pages(content, file_validation.file_type)
         outcome = self.extraction_service.extract(pages, document_type)
+
+        llm_assisted = self._recover_missing_fields(pages, outcome, document_type)
 
         validation_summary = self.financial_validation_service.validate(document_type, outcome)
 
@@ -69,6 +73,8 @@ class DocumentService:
         metadata = ProcessingMetadata(
             ocr_used=outcome.ocr_used,
             ocr_engine="tesseract" if outcome.ocr_used else None,
+            extraction_method="rule_based_layout" + ("+llm_assisted" if llm_assisted else ""),
+            llm_model=self.settings.llm_model if llm_assisted else None,
             processed_at=datetime.now(timezone.utc),
             processing_time_ms=processing_time_ms,
             pages_processed=outcome.pages_processed,
@@ -99,6 +105,25 @@ class DocumentService:
             processing_time_ms,
         )
         return result_dict
+
+    def _recover_missing_fields(self, pages, outcome, document_type: DocumentType) -> bool:
+        """Use the optional LLM pass to fill fields the rule-based extractor left null."""
+        if not self.llm_service.enabled:
+            return False
+
+        missing = [
+            key
+            for key, field in outcome.extracted_data.items()
+            if isinstance(field, dict) and "value" in field and field.get("value") is None
+        ]
+        if not missing:
+            return False
+
+        document_text = "\n".join(f"--- page {page.page_number} ---\n{page.text}" for page in pages)
+        recovered = self.llm_service.recover_missing_fields(document_text, document_type.value, missing)
+        for key, field in recovered.items():
+            outcome.extracted_data[key] = field
+        return bool(recovered)
 
     def get_by_name(self, document_name: str) -> dict | None:
         record = self.repository.get_by_name(document_name)

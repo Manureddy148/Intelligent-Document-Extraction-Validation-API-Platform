@@ -5,6 +5,7 @@ from app.core.logging import get_logger
 from app.schemas.extraction import DocumentType
 from app.services.ocr_service import PageText
 from app.utils.invoice_parsing import InvoiceContext, parse_invoice
+from app.utils.layout import LayoutRow, detect_period_columns
 from app.utils.statement_sections import (
     BALANCE_SHEET_SECTION_MARKERS,
     BALANCE_SHEET_STOP_MARKERS,
@@ -13,31 +14,35 @@ from app.utils.statement_sections import (
     PROFIT_AND_LOSS_SECTION_MARKERS,
     PROFIT_AND_LOSS_STOP_MARKERS,
     find_in_sections,
+    find_preferring_section,
     scan_sections,
 )
-from app.utils.text_parsing import StatementLineItem, StatementSection, extract_period_labels
+from app.utils.text_parsing import StatementLineItem, StatementSection
 
 logger = get_logger(__name__)
 
-_UNIT_RE = re.compile(r"in\s*['’]?\s*(000|00,000|lakh|lakhs|crore|crores|million)", re.IGNORECASE)
+_UNIT_RE = re.compile(r"in\s*['’`]?\s*(000|00,000|lakhs?|crores?|millions?|billions?)", re.IGNORECASE)
 _CURRENCY_HINTS = [
-    (r"\bINR\b|₹|Rs\.?\b", "INR"),
+    (r"₹|\bINR\b|\bRs\.?\b", "INR"),
     (r"\bUSD\b|\$", "USD"),
     (r"\bEUR\b|€", "EUR"),
-    (r"\bRM\b", "MYR"),
+    (r"\bGBP\b|£", "GBP"),
+    (r"\bRM\b|\bMYR\b", "MYR"),
 ]
 
 
-def _detect_currency_and_unit(lines: list[str]) -> tuple[str | None, str | None]:
-    sample = "\n".join(lines[:15])
+def _detect_currency_and_unit(lines: list[str]) -> tuple[str | None, str | None, str | None]:
+    """Detect reporting currency and unit multiplier from the statement header."""
+    header = "\n".join(lines[:20])
     currency = None
     for pattern, code in _CURRENCY_HINTS:
-        if re.search(pattern, sample):
+        if re.search(pattern, header):
             currency = code
             break
-    unit_match = _UNIT_RE.search(sample)
+    unit_match = _UNIT_RE.search(header)
     unit = unit_match.group(1) if unit_match else None
-    return currency, unit
+    unit_source = unit_match.string[max(0, unit_match.start() - 12) : unit_match.end()].strip() if unit_match else None
+    return currency, unit, unit_source
 
 
 def _field(value, page_number=None, source_text=None, note=None) -> dict:
@@ -49,7 +54,7 @@ def _field(value, page_number=None, source_text=None, note=None) -> dict:
 
 def _field_from_item(item: StatementLineItem | None, note_if_missing: str | None = None) -> dict:
     if item is None:
-        return _field(None, note=note_if_missing)
+        return _field(None, note=note_if_missing or "Not found in the document")
     return _field(item.values, item.page_number, item.source_text)
 
 
@@ -79,25 +84,31 @@ class ExtractionOutcome:
 
 
 class ExtractionService:
-    """Parses OCR/native text into structured, document-type-specific fields."""
+    """Turns page text/geometry into structured, document-type-specific fields."""
 
     def extract(self, pages: list[PageText], document_type: DocumentType) -> ExtractionOutcome:
-        ocr_used = any(p.ocr_used for p in pages)
-        lines_with_pages = [
-            (p.page_number, line.strip())
-            for p in pages
-            for line in p.text.splitlines()
-            if line.strip()
-        ]
-        all_lines = [line for _, line in lines_with_pages]
+        ocr_used = any(page.ocr_used for page in pages)
+        rows = [row for page in pages for row in page.rows]
+        lines_with_pages = [(row.page_number, row.text) for row in rows if row.text.strip()]
 
         if document_type == DocumentType.INVOICE:
             return self._extract_invoice(lines_with_pages, ocr_used, len(pages))
+
+        periods, global_anchors = detect_period_columns(rows)
+        page_anchors: dict[int, list[float]] = {}
+        for page in pages:
+            _, anchors = detect_period_columns(page.rows)
+            page_anchors[page.page_number] = anchors if len(anchors) == len(global_anchors) else global_anchors
+
+        logger.info("Detected periods=%s column anchors=%s", periods, page_anchors)
+
         if document_type == DocumentType.BALANCE_SHEET:
-            return self._extract_balance_sheet(lines_with_pages, all_lines, ocr_used, len(pages))
+            return self._extract_balance_sheet(rows, periods, page_anchors, ocr_used, len(pages))
         if document_type == DocumentType.PROFIT_AND_LOSS:
-            return self._extract_profit_and_loss(lines_with_pages, all_lines, ocr_used, len(pages))
-        return self._extract_cash_flow(lines_with_pages, all_lines, ocr_used, len(pages))
+            return self._extract_profit_and_loss(rows, periods, page_anchors, ocr_used, len(pages))
+        return self._extract_cash_flow(rows, periods, page_anchors, ocr_used, len(pages))
+
+    # ---- Invoice ----------------------------------------------------------
 
     def _extract_invoice(self, lines_with_pages, ocr_used: bool, pages_processed: int) -> ExtractionOutcome:
         ctx = parse_invoice(lines_with_pages)
@@ -106,24 +117,33 @@ class ExtractionService:
             return ctx.evidence.get(key, (None, None))
 
         extracted_data: dict = {
-            "vendor_name": _field(ctx.vendor_name),
+            "vendor_name": _field(ctx.vendor_name, *ev("vendor_name")),
+            "vendor_address": _field(ctx.vendor_address, *ev("vendor_address")),
+            "vendor_tax_id": _field(ctx.vendor_tax_id, *ev("vendor_tax_id")),
+            "customer_name": _field(ctx.customer_name, *ev("customer_name")),
             "invoice_number": _field(ctx.invoice_number, *ev("invoice_number")),
-            "invoice_date": _field(ctx.invoice_date),
-            "currency": _field(ctx.currency),
+            "invoice_date": _field(ctx.invoice_date, *ev("invoice_date")),
+            "invoice_time": _field(ctx.invoice_time, *ev("invoice_time")),
+            "currency": _field(ctx.currency, *ev("currency")),
             "subtotal": _field(ctx.subtotal, *ev("subtotal")),
             "tax_amount": _field(ctx.tax_amount, *ev("tax_amount")),
-            "discount": _field(ctx.discount),
+            "tax_rate_percent": _field(ctx.tax_rate_percent, *ev("tax_rate_percent")),
+            "tax_inclusive": _field(ctx.tax_inclusive, *ev("tax_inclusive")),
+            "discount": _field(ctx.discount, *ev("discount")),
             "total_amount": _field(ctx.total_amount, *ev("total_amount")),
+            "total_quantity": _field(ctx.total_quantity, *ev("total_quantity")),
             "cash_paid": _field(ctx.cash_paid, *ev("cash_paid")),
             "change": _field(ctx.change, *ev("change")),
             "line_items": [
                 {
-                    "description": li.description,
-                    "quantity": li.quantity,
-                    "unit_price": li.unit_price,
-                    "amount": li.amount,
+                    "description": item.description,
+                    "quantity": item.quantity,
+                    "unit_price": item.unit_price,
+                    "amount": item.amount,
+                    "page_number": item.page_number,
+                    "source_text": item.source_text,
                 }
-                for li in ctx.line_items
+                for item in ctx.line_items
             ],
         }
         return ExtractionOutcome(
@@ -134,18 +154,23 @@ class ExtractionService:
             invoice_context=ctx,
         )
 
-    def _extract_balance_sheet(self, lines_with_pages, all_lines, ocr_used, pages_processed) -> ExtractionOutcome:
-        periods = extract_period_labels(all_lines)
-        sections = scan_sections(lines_with_pages, BALANCE_SHEET_SECTION_MARKERS, BALANCE_SHEET_STOP_MARKERS, periods)
-        currency, unit = _detect_currency_and_unit(all_lines)
+    # ---- Balance sheet ----------------------------------------------------
 
-        cl = find_in_sections(sections, "capital_and_liabilities", "total")
+    def _extract_balance_sheet(
+        self, rows: list[LayoutRow], periods, page_anchors, ocr_used, pages_processed
+    ) -> ExtractionOutcome:
+        sections = scan_sections(
+            rows, BALANCE_SHEET_SECTION_MARKERS, BALANCE_SHEET_STOP_MARKERS, periods, page_anchors
+        )
+        currency, unit, unit_source = _detect_currency_and_unit([row.text for row in rows])
+
+        liabilities_total = find_in_sections(sections, "capital_and_liabilities", "total")
         assets_total = find_in_sections(sections, "assets", "total")
 
         extracted_data = {
             "statement_periods": periods,
             "currency": _field(currency),
-            "unit": _field(unit, note="Multiplier applied to reported figures, e.g. amounts in thousands"),
+            "unit_multiplier": _field(unit, source_text=unit_source, note="Figures are reported in these units"),
             "capital": _field_from_item(find_in_sections(sections, "capital_and_liabilities", "capital")),
             "reserves_and_surplus": _field_from_item(
                 find_in_sections(sections, "capital_and_liabilities", "reserves and surplus", "reserves & surplus")
@@ -158,8 +183,8 @@ class ExtractionService:
             "other_liabilities_and_provisions": _field_from_item(
                 find_in_sections(sections, "capital_and_liabilities", "other liabilities")
             ),
-            "total_liabilities": _field_from_item(cl, note_if_missing="Total capital & liabilities line not found"),
-            "cash_and_balances_with_rbi": _field_from_item(
+            "total_liabilities": _field_from_item(liabilities_total),
+            "cash_and_balances_with_central_bank": _field_from_item(
                 find_in_sections(sections, "assets", "cash and balances")
             ),
             "balances_with_banks": _field_from_item(find_in_sections(sections, "assets", "balances with banks")),
@@ -167,10 +192,11 @@ class ExtractionService:
             "advances": _field_from_item(find_in_sections(sections, "assets", "advances")),
             "fixed_assets": _field_from_item(find_in_sections(sections, "assets", "fixed assets")),
             "other_assets": _field_from_item(find_in_sections(sections, "assets", "other assets")),
-            "total_assets": _field_from_item(assets_total, note_if_missing="Total assets line not found"),
+            "total_assets": _field_from_item(assets_total),
             "total_equity": _field(
                 None,
-                note="Not separately disclosed as a single line in this statement format; see capital/reserves/minority_interest",
+                note="Not disclosed as a single line in this statement format; equity components are reported "
+                "separately (capital, reserves_and_surplus, minority_interest)",
             ),
             "line_items": _serialize_sections(sections),
         }
@@ -182,22 +208,25 @@ class ExtractionService:
             sections=sections,
         )
 
-    def _extract_profit_and_loss(self, lines_with_pages, all_lines, ocr_used, pages_processed) -> ExtractionOutcome:
-        periods = extract_period_labels(all_lines)
+    # ---- Profit & loss ----------------------------------------------------
+
+    def _extract_profit_and_loss(
+        self, rows: list[LayoutRow], periods, page_anchors, ocr_used, pages_processed
+    ) -> ExtractionOutcome:
         sections = scan_sections(
-            lines_with_pages, PROFIT_AND_LOSS_SECTION_MARKERS, PROFIT_AND_LOSS_STOP_MARKERS, periods
+            rows, PROFIT_AND_LOSS_SECTION_MARKERS, PROFIT_AND_LOSS_STOP_MARKERS, periods, page_anchors
         )
-        currency, unit = _detect_currency_and_unit(all_lines)
+        currency, unit, unit_source = _detect_currency_and_unit([row.text for row in rows])
 
         total_income = find_in_sections(sections, "income", "total")
         total_expenditure = find_in_sections(sections, "expenditure", "total")
-        net_profit_attributable = find_in_sections(sections, "profit", "attributable to the group")
+        attributable = find_preferring_section(sections, "profit", "attributable to the group")
         total_appropriation = find_in_sections(sections, "appropriations", "total")
 
         extracted_data = {
             "statement_periods": periods,
             "currency": _field(currency),
-            "unit": _field(unit),
+            "unit_multiplier": _field(unit, source_text=unit_source),
             "interest_earned": _field_from_item(find_in_sections(sections, "income", "interest earned")),
             "other_income": _field_from_item(find_in_sections(sections, "income", "other income")),
             "total_income": _field_from_item(total_income),
@@ -207,24 +236,26 @@ class ExtractionService:
                 find_in_sections(sections, "expenditure", "provisions and contingencies", "provisions & contingencies")
             ),
             "total_expenditure": _field_from_item(total_expenditure),
-            "net_profit_for_the_year": _field_from_item(
-                find_in_sections(sections, "profit", "net profit for the year")
-            ),
-            "minority_interest": _field_from_item(find_in_sections(sections, "profit", "minority interest")),
-            "share_in_profits_of_associates": _field_from_item(
-                find_in_sections(sections, "profit", "share in profit")
-            ),
-            "consolidated_profit_attributable_to_group": _field_from_item(net_profit_attributable),
-            "brought_forward_profit": _field_from_item(find_in_sections(sections, "profit", "brought forward")),
+            "net_profit_for_the_year": _field_from_item(find_preferring_section(sections, "profit", "net profit for the year")),
+            "minority_interest": _field_from_item(find_preferring_section(sections, "profit", "minority interest")),
+            "share_in_profits_of_associates": _field_from_item(find_preferring_section(sections, "profit", "share in profit")),
+            "consolidated_profit_attributable_to_group": _field_from_item(attributable),
+            "brought_forward_profit": _field_from_item(find_preferring_section(sections, "profit", "brought forward")),
             "total_available_for_appropriation": _field_from_item(total_appropriation),
-            # Generic minimum-field aliases (spec section 2); null where the bank
-            # statement format does not separately disclose an equivalent line.
-            "revenue": _field_from_item(total_income, note_if_missing="Not present"),
-            "cost_of_sales": _field(None, note="Not applicable to this statement format"),
-            "gross_profit": _field(None, note="Not applicable to this statement format"),
-            "operating_profit": _field(None, note="Not applicable to this statement format"),
-            "tax": _field(None, note="Not separately disclosed above the profit line in this statement"),
-            "net_profit": _field_from_item(net_profit_attributable, note_if_missing="Not present"),
+            "balance_carried_to_balance_sheet": _field_from_item(
+                find_preferring_section(sections, "appropriations", "carried over to balance sheet")
+            ),
+            # Generic profit & loss aliases (case study section 2). Null where a
+            # banking-format statement does not disclose an equivalent line.
+            "revenue": _field_from_item(total_income, note_if_missing="Total income line not found"),
+            "cost_of_sales": _field(None, note="Not applicable to a banking-format statement"),
+            "gross_profit": _field(None, note="Not applicable to a banking-format statement"),
+            "operating_profit": _field(None, note="Not applicable to a banking-format statement"),
+            "tax": _field_from_item(
+                find_preferring_section(sections, "appropriations", "tax (including cess)"),
+                note_if_missing="Income tax is not disclosed as a separate line above the profit line",
+            ),
+            "net_profit": _field_from_item(attributable, note_if_missing="Not found in the document"),
             "line_items": _serialize_sections(sections),
         }
         return ExtractionOutcome(
@@ -235,29 +266,48 @@ class ExtractionService:
             sections=sections,
         )
 
-    def _extract_cash_flow(self, lines_with_pages, all_lines, ocr_used, pages_processed) -> ExtractionOutcome:
-        periods = extract_period_labels(all_lines)
-        sections = scan_sections(lines_with_pages, CASH_FLOW_SECTION_MARKERS, CASH_FLOW_STOP_MARKERS, periods)
-        currency, unit = _detect_currency_and_unit(all_lines)
+    # ---- Cash flow --------------------------------------------------------
 
-        net_operating = find_in_sections(sections, "operating", "net cash flow", "net cash used in", "net cash generated")
-        net_investing = find_in_sections(sections, "investing", "net cash used in investing", "net cash generated from investing", "net cash flow from investing")
-        net_financing = find_in_sections(sections, "financing", "net cash generated from financing", "net cash used in financing")
-        fx_adjustment = find_in_sections(sections, "financing", "exchange fluctuation", "translation reserve")
-        amalgamation = find_in_sections(sections, "financing", "amalgamation")
-        net_increase = find_in_sections(sections, "financing", "net increase", "net decrease in cash")
-        opening_cash = find_in_sections(sections, "financing", "as at april", "opening")
-        closing_cash = find_in_sections(sections, "financing", "as at march", "closing")
+    def _extract_cash_flow(
+        self, rows: list[LayoutRow], periods, page_anchors, ocr_used, pages_processed
+    ) -> ExtractionOutcome:
+        sections = scan_sections(rows, CASH_FLOW_SECTION_MARKERS, CASH_FLOW_STOP_MARKERS, periods, page_anchors)
+        currency, unit, unit_source = _detect_currency_and_unit([row.text for row in rows])
+
+        # Within a cash-flow section the only "net cash" row is that section's
+        # subtotal, however the wording is arranged ("Net cash flow from /
+        # (used) in investing activities", "Net cash used in ...", etc).
+        operating = find_in_sections(sections, "operating", "net cash")
+        investing = find_in_sections(sections, "investing", "net cash")
+        financing = find_in_sections(sections, "financing", "net cash")
+        fx_adjustment = find_preferring_section(
+            sections, "financing", "translation reserve", "exchange fluctuation", "foreign currency translation"
+        )
+        amalgamation = find_preferring_section(sections, "financing", "on amalgamation")
+        net_increase = find_preferring_section(
+            sections, "financing", "net increase", "net decrease", "net (decrease)"
+        )
+        opening_cash = find_preferring_section(
+            sections, "financing", "beginning of", "as at april", "opening cash", "opening balance"
+        )
+        closing_cash = find_preferring_section(
+            sections, "financing", "end of", "as at march", "closing cash", "closing balance"
+        )
 
         extracted_data = {
             "statement_periods": periods,
             "currency": _field(currency),
-            "unit": _field(unit),
-            "operating_cash_flow": _field_from_item(net_operating),
-            "investing_cash_flow": _field_from_item(net_investing),
-            "financing_cash_flow": _field_from_item(net_financing),
-            "fx_translation_adjustment": _field_from_item(fx_adjustment),
-            "cash_on_amalgamation_adjustment": _field_from_item(amalgamation),
+            "unit_multiplier": _field(unit, source_text=unit_source),
+            "profit_before_tax": _field_from_item(find_preferring_section(sections, "operating", "profit before income tax")),
+            "operating_cash_flow": _field_from_item(operating),
+            "investing_cash_flow": _field_from_item(investing),
+            "financing_cash_flow": _field_from_item(financing),
+            "fx_translation_adjustment": _field_from_item(
+                fx_adjustment, note_if_missing="No exchange/translation adjustment line in this statement"
+            ),
+            "cash_on_amalgamation_adjustment": _field_from_item(
+                amalgamation, note_if_missing="No amalgamation adjustment line in this statement"
+            ),
             "net_change_in_cash": _field_from_item(net_increase),
             "opening_cash": _field_from_item(opening_cash),
             "closing_cash": _field_from_item(closing_cash),

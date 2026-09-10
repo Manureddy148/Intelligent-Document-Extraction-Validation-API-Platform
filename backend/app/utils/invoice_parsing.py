@@ -1,22 +1,48 @@
 import re
 from dataclasses import dataclass, field
 
-_DATE_RE = re.compile(r"\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b")
-_MONEY_RE = re.compile(r"(-?\d[\d,]*\.\d{2})")
-_GST_INLINE_RE = re.compile(r"GST\s*\d{1,2}(?:\.\d+)?%\+?\s*([\d,]+\.\d{2})", re.IGNORECASE)
-_LINE_ITEM_RE = re.compile(
-    r"^(?P<desc>[A-Za-z][A-Za-z0-9 /,'&.\-]{2,50}?)\s+"
+_DATE_RE = re.compile(r"\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b")
+_TIME_RE = re.compile(r"\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)\b", re.IGNORECASE)
+_MONEY_RE = re.compile(r"(-?\d[\d,]*\.\d{2})\b")
+_TAX_RATE_RE = re.compile(r"\b(?:GST|SST|VAT|TAX)\s*[:\-]?\s*(\d{1,2}(?:\.\d+)?)\s*%", re.IGNORECASE)
+_TAX_AMOUNT_INLINE_RE = re.compile(
+    r"\b(?:GST|SST|VAT|TAX)\s*(?:\d{1,2}(?:\.\d+)?\s*%)?\s*[+:\-]?\s*(\d[\d,]*\.\d{2})\b", re.IGNORECASE
+)
+_TAX_ID_RE = re.compile(
+    r"\b(?:GST|SST|VAT|TAX|TIN|GSTIN)\s*(?:No\.?|ID|Reg(?:istration)?(?:\s*No\.?)?)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-/]{5,})",
+    re.IGNORECASE,
+)
+_INVOICE_NO_RE = re.compile(
+    r"\b(?:invoice|receipt|bill|doc(?:ument)?|ref(?:erence)?|trn|inv)\s*(?:no\.?|number|#|id)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-/]{2,})",
+    re.IGNORECASE,
+)
+_TOTAL_QTY_RE = re.compile(r"total\s*(?:qty|quantity)\s*[:\-]?\s*(\d+(?:[.,]\d+)?)", re.IGNORECASE)
+_ADDRESS_HINT_RE = re.compile(r"\b(?:jalan|jln|no\.?\s*\d|street|st\.|road|rd\.|taman|lot|floor|avenue|ave)\b", re.IGNORECASE)
+
+# "<description> <qty> <unit price> <amount>" and "<qty> <description> <unit price> <amount>"
+_LINE_ITEM_TRAILING_QTY_RE = re.compile(
+    r"^(?P<desc>[A-Za-z][A-Za-z0-9 /,'&.()\-]{2,60}?)\s+"
     r"(?P<qty>\d+(?:\.\d+)?)\s+"
-    r"(?P<unit_price>\d+\.\d{2})\s+"
-    r"(?P<amount>\d+\.\d{2})\s*$"
+    r"(?P<unit_price>\d[\d,]*\.\d{2})\s+"
+    r"(?P<amount>\d[\d,]*\.\d{2})\s*[A-Z]{0,3}$"
+)
+_LINE_ITEM_LEADING_QTY_RE = re.compile(
+    r"^(?P<qty>\d+(?:\.\d+)?)\s+"
+    r"(?P<desc>[A-Za-z][A-Za-z0-9 /,'&.()\-]{2,60}?)\s+"
+    r"(?P<unit_price>\d[\d,]*\.\d{2})\s+"
+    r"(?P<amount>\d[\d,]*\.\d{2})\s*[A-Z]{0,3}$"
 )
 
+_TOTAL_EXCLUSIONS = ("qty", "quantity", "item", "count", "summary")
 
-def _last_money_on_line(line: str) -> float | None:
-    matches = _MONEY_RE.findall(line)
-    if not matches:
-        return None
-    return float(matches[-1].replace(",", ""))
+
+def _money_values(line: str) -> list[float]:
+    return [float(match.replace(",", "")) for match in _MONEY_RE.findall(line)]
+
+
+def _last_money(line: str) -> float | None:
+    values = _money_values(line)
+    return values[-1] if values else None
 
 
 @dataclass
@@ -25,89 +51,147 @@ class InvoiceLineItem:
     quantity: float
     unit_price: float
     amount: float
+    page_number: int | None = None
+    source_text: str | None = None
 
 
 @dataclass
 class InvoiceContext:
     vendor_name: str | None = None
+    vendor_address: str | None = None
+    vendor_tax_id: str | None = None
+    customer_name: str | None = None
     invoice_number: str | None = None
     invoice_date: str | None = None
+    invoice_time: str | None = None
     currency: str | None = None
     subtotal: float | None = None
     tax_amount: float | None = None
+    tax_rate_percent: float | None = None
+    tax_inclusive: bool | None = None
     discount: float | None = None
     total_amount: float | None = None
+    total_quantity: float | None = None
     cash_paid: float | None = None
     change: float | None = None
     line_items: list[InvoiceLineItem] = field(default_factory=list)
     evidence: dict[str, tuple[int, str]] = field(default_factory=dict)
 
+    def record(self, key: str, page_number: int, line: str) -> None:
+        self.evidence[key] = (page_number, line)
+
 
 def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
+    """Best-effort field extraction for invoices and point-of-sale receipts.
+
+    Every value is taken verbatim from an OCR line; nothing is inferred when a
+    line is absent, so unreadable fields stay null.
+    """
     ctx = InvoiceContext()
     full_text = "\n".join(line for _, line in lines_with_pages)
 
-    for page_number, line in lines_with_pages:
-        if ctx.vendor_name is None and len(line.strip()) >= 3 and not line.strip().isdigit():
-            ctx.vendor_name = line.strip()
-
+    for page_number, raw_line in lines_with_pages:
+        line = raw_line.strip()
         lowered = line.lower()
 
-        gst_match = _GST_INLINE_RE.search(line)
-        if gst_match and ctx.tax_amount is None:
-            ctx.tax_amount = float(gst_match.group(1).replace(",", ""))
-            ctx.evidence["tax_amount"] = (page_number, line.strip())
+        if ctx.vendor_name is None and len(re.sub(r"[^A-Za-z]", "", line)) >= 4 and not _DATE_RE.search(line):
+            ctx.vendor_name = line
+            ctx.record("vendor_name", page_number, line)
+        elif ctx.vendor_address is None and _ADDRESS_HINT_RE.search(line):
+            ctx.vendor_address = line
+            ctx.record("vendor_address", page_number, line)
 
-        if "sub total" in lowered or "subtotal" in lowered:
-            value = _last_money_on_line(line)
-            if value is not None:
-                ctx.subtotal = value
-                ctx.evidence["subtotal"] = (page_number, line.strip())
-
-        if "total" in lowered and "qty" not in lowered:
-            value = _last_money_on_line(line)
-            if value is not None:
-                ctx.total_amount = value
-                ctx.evidence["total_amount"] = (page_number, line.strip())
-
-        if re.search(r"\bcash\b", lowered) and "cashier" not in lowered:
-            value = _last_money_on_line(line)
-            if value is not None:
-                ctx.cash_paid = value
-                ctx.evidence["cash_paid"] = (page_number, line.strip())
-
-        if "change" in lowered:
-            value = _last_money_on_line(line)
-            if value is not None:
-                ctx.change = value
-                ctx.evidence["change"] = (page_number, line.strip())
+        if ctx.vendor_tax_id is None:
+            tax_id = _TAX_ID_RE.search(line)
+            if tax_id and not _MONEY_RE.search(line):
+                ctx.vendor_tax_id = tax_id.group(1)
+                ctx.record("vendor_tax_id", page_number, line)
 
         if ctx.invoice_number is None:
-            ref_match = re.search(r"\b(?:TRN|Invoice\s*No\.?|Receipt\s*No\.?)\s*[:#]?\s*([A-Za-z0-9-]+)", line, re.IGNORECASE)
-            if ref_match:
-                ctx.invoice_number = ref_match.group(1)
-                ctx.evidence["invoice_number"] = (page_number, line.strip())
+            invoice_no = _INVOICE_NO_RE.search(line)
+            if invoice_no and not _MONEY_RE.search(line):
+                ctx.invoice_number = invoice_no.group(1)
+                ctx.record("invoice_number", page_number, line)
 
-        item_match = _LINE_ITEM_RE.match(line.strip())
-        if item_match:
-            ctx.line_items.append(
-                InvoiceLineItem(
-                    description=item_match.group("desc").strip(),
-                    quantity=float(item_match.group("qty")),
-                    unit_price=float(item_match.group("unit_price")),
-                    amount=float(item_match.group("amount")),
+        if ctx.invoice_date is None:
+            date_match = _DATE_RE.search(line)
+            if date_match:
+                ctx.invoice_date = date_match.group(1)
+                ctx.record("invoice_date", page_number, line)
+                time_match = _TIME_RE.search(line)
+                if time_match:
+                    ctx.invoice_time = time_match.group(1)
+                    ctx.record("invoice_time", page_number, line)
+
+        if ctx.tax_rate_percent is None:
+            rate_match = _TAX_RATE_RE.search(line)
+            if rate_match:
+                ctx.tax_rate_percent = float(rate_match.group(1))
+                ctx.record("tax_rate_percent", page_number, line)
+
+        if ctx.tax_amount is None:
+            tax_match = _TAX_AMOUNT_INLINE_RE.search(line)
+            if tax_match and "total" not in lowered:
+                ctx.tax_amount = float(tax_match.group(1).replace(",", ""))
+                ctx.record("tax_amount", page_number, line)
+
+        if "sub total" in lowered or "subtotal" in lowered:
+            value = _last_money(line)
+            if value is not None:
+                ctx.subtotal = value
+                ctx.record("subtotal", page_number, line)
+
+        if "discount" in lowered:
+            value = _last_money(line)
+            if value is not None:
+                ctx.discount = value
+                ctx.record("discount", page_number, line)
+
+        quantity_match = _TOTAL_QTY_RE.search(line)
+        if quantity_match:
+            ctx.total_quantity = float(quantity_match.group(1).replace(",", "."))
+            ctx.record("total_quantity", page_number, line)
+        elif "total" in lowered and not any(token in lowered for token in _TOTAL_EXCLUSIONS):
+            value = _last_money(line)
+            if value is not None:
+                ctx.total_amount = value
+                ctx.record("total_amount", page_number, line)
+                if re.search(r"includ\w*", lowered):
+                    ctx.tax_inclusive = True
+
+        if re.search(r"\bcash\b", lowered) and "cashier" not in lowered:
+            value = _last_money(line)
+            if value is not None:
+                ctx.cash_paid = value
+                ctx.record("cash_paid", page_number, line)
+
+        if "change" in lowered:
+            value = _last_money(line)
+            if value is not None:
+                ctx.change = value
+                ctx.record("change", page_number, line)
+
+        for pattern in (_LINE_ITEM_TRAILING_QTY_RE, _LINE_ITEM_LEADING_QTY_RE):
+            item_match = pattern.match(line)
+            if item_match:
+                ctx.line_items.append(
+                    InvoiceLineItem(
+                        description=item_match.group("desc").strip(),
+                        quantity=float(item_match.group("qty")),
+                        unit_price=float(item_match.group("unit_price").replace(",", "")),
+                        amount=float(item_match.group("amount").replace(",", "")),
+                        page_number=page_number,
+                        source_text=line,
+                    )
                 )
-            )
+                break
 
-    date_match = _DATE_RE.search(full_text)
-    if date_match:
-        ctx.invoice_date = date_match.group(1)
+    if ctx.tax_inclusive is None and ctx.tax_amount is not None and ctx.subtotal is None:
+        ctx.tax_inclusive = True
 
-    if re.search(r"\bRM\b", full_text):
-        ctx.currency = "MYR"
-    elif re.search(r"\bUSD\b|\$", full_text):
-        ctx.currency = "USD"
-    elif re.search(r"\bINR\b|₹", full_text):
-        ctx.currency = "INR"
+    for pattern, code in ((r"\bRM\b|\bMYR\b", "MYR"), (r"\bUSD\b|\$", "USD"), (r"\bINR\b|₹", "INR"), (r"\bEUR\b|€", "EUR")):
+        if re.search(pattern, full_text):
+            ctx.currency = code
+            break
 
     return ctx

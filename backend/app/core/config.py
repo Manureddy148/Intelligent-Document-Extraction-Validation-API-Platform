@@ -23,15 +23,22 @@ class Settings(BaseSettings):
 
     ocr_dpi: int = 200
     ocr_min_native_text_chars: int = 20
+    # Mode 3 (fully automatic segmentation) recognises these statements best;
+    # rows are rebuilt from word geometry afterwards, so its block ordering
+    # does not matter. Mode 6 preserves reading order but drops bold totals.
+    ocr_psm: int = 3
+    ocr_min_confidence: int = 30
     tesseract_cmd: str | None = None
 
     financial_tolerance_absolute: float = 1.0
     financial_tolerance_relative: float = 0.01
 
-    # Optional: if set, the extraction service may use an LLM to assist field
-    # extraction. When absent, a deterministic rule-based extractor is used.
+    # Optional LLM-assisted recovery of fields OCR could not resolve. Disabled
+    # unless an API key is supplied; the pipeline is deterministic without it.
     llm_api_key: str | None = None
-    llm_provider: str | None = None
+    llm_model: str = "claude-opus-5"
+    llm_max_tokens: int = 4096
+    llm_max_text_chars: int = 20000
 
     upload_dir: str = "./data/uploads"
 

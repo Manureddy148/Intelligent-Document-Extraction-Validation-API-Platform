@@ -3,37 +3,42 @@ from app.core.logging import get_logger
 from app.schemas.extraction import DocumentType, ValidationCheck, ValidationStatus, ValidationSummary
 from app.services.extraction_service import ExtractionOutcome
 from app.utils.invoice_parsing import InvoiceContext
-from app.utils.text_parsing import StatementLineItem, StatementSection
+from app.utils.text_parsing import StatementSection
 
 logger = get_logger(__name__)
 
 
-def _item_value(item: StatementLineItem | None, period: str) -> float | None:
-    return item.values.get(period) if item else None
-
-
 def _sum_optional(*values: float | None) -> float | None:
-    present = [v for v in values if v is not None]
+    present = [value for value in values if value is not None]
     if not present:
         return None
     return sum(present)
 
 
-def _sum_section(section: StatementSection | None, exclude_key: str | None, period: str) -> float | None:
+def _sum_components(section: StatementSection | None, period: str) -> float | None:
+    """Sum a section's component rows, excluding its reported total row.
+
+    Returns None if any component row has no value for this period: summing the
+    rows that happen to have been read would silently treat an unread row as
+    zero and report a reconciliation failure that the document does not support.
+    """
     if section is None:
         return None
-    values = [
-        item.values.get(period)
-        for item in section.items
-        if item.key != exclude_key and item.values.get(period) is not None
-    ]
-    if not values:
+    components = [item for item in section.items if "total" not in item.label.lower()]
+    if not components:
+        return None
+    values = [item.values.get(period) for item in components]
+    if any(value is None for value in values):
         return None
     return sum(values)
 
 
 class FinancialValidationService:
-    """Implements the per-document-type financial reconciliation checks from the case study spec."""
+    """Runs the per-document-type reconciliation checks required by the case study.
+
+    Values come from the fields the extraction service already resolved, so the
+    numbers checked here are exactly the numbers reported in `extracted_data`.
+    """
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -48,23 +53,35 @@ class FinancialValidationService:
         else:
             checks = self._validate_cash_flow(outcome)
 
-        overall_status = self._overall_status(checks)
         issues = [
-            f"{check.name}: {check.message or 'variance exceeds tolerance'}"
-            for check in checks
-            if check.status == ValidationStatus.FAIL
+            f"{check.name}: {check.message}" for check in checks if check.status == ValidationStatus.FAIL
         ]
-        return ValidationSummary(checks=checks, overall_status=overall_status, issues=issues)
+        return ValidationSummary(
+            checks=checks,
+            overall_status=self._overall_status(checks),
+            issues=issues,
+        )
 
     def _overall_status(self, checks: list[ValidationCheck]) -> ValidationStatus:
-        if any(c.status == ValidationStatus.FAIL for c in checks):
+        if any(check.status == ValidationStatus.FAIL for check in checks):
             return ValidationStatus.FAIL
-        if any(c.status == ValidationStatus.PASS for c in checks):
+        if any(check.status == ValidationStatus.PASS for check in checks):
             return ValidationStatus.PASS
         return ValidationStatus.NOT_APPLICABLE
 
+    def _value(self, outcome: ExtractionOutcome, key: str, period: str) -> float | None:
+        """Read an extracted field's value for a period (statements) or directly (invoices)."""
+        field = outcome.extracted_data.get(key)
+        if not isinstance(field, dict):
+            return None
+        value = field.get("value")
+        if isinstance(value, dict):
+            return value.get(period)
+        return value if isinstance(value, (int, float)) else None
+
     def _compare(self, name: str, formula: str, operands: dict, calculated, reported) -> ValidationCheck:
         if calculated is None or reported is None:
+            missing = [key for key, value in operands.items() if value is None]
             return ValidationCheck(
                 name=name,
                 formula=formula,
@@ -73,7 +90,11 @@ class FinancialValidationService:
                 reported_value=reported,
                 variance=None,
                 status=ValidationStatus.NOT_APPLICABLE,
-                message="Required field(s) for this check were not found in the document.",
+                message=(
+                    "Not all values required by this check are present in the document"
+                    + (f" (missing: {', '.join(missing)})" if missing else "")
+                    + "."
+                ),
             )
         variance = round(calculated - reported, 2)
         tolerance = max(
@@ -81,7 +102,6 @@ class FinancialValidationService:
             self.settings.financial_tolerance_relative * max(abs(calculated), abs(reported), 1.0),
         )
         status = ValidationStatus.PASS if abs(variance) <= tolerance else ValidationStatus.FAIL
-        message = None if status == ValidationStatus.PASS else f"Variance {variance} exceeds tolerance {round(tolerance, 2)}."
         return ValidationCheck(
             name=name,
             formula=formula,
@@ -90,7 +110,9 @@ class FinancialValidationService:
             reported_value=round(reported, 2),
             variance=variance,
             status=status,
-            message=message,
+            message=None
+            if status == ValidationStatus.PASS
+            else f"Variance {variance} exceeds tolerance {round(tolerance, 2)}.",
         )
 
     # ---- Invoice ----------------------------------------------------------
@@ -101,38 +123,49 @@ class FinancialValidationService:
             return checks
 
         for index, item in enumerate(ctx.line_items, start=1):
-            calculated = round(item.quantity * item.unit_price, 2)
             checks.append(
                 self._compare(
-                    name=f"line_item_{index}_quantity_times_price",
-                    formula="quantity * unit_price ≈ amount",
+                    name=f"line_item_{index}_quantity_times_unit_price",
+                    formula="quantity * unit_price ≈ line amount",
                     operands={"quantity": item.quantity, "unit_price": item.unit_price},
-                    calculated=calculated,
+                    calculated=round(item.quantity * item.unit_price, 2),
                     reported=item.amount,
                 )
             )
 
         if ctx.line_items:
-            line_total_sum = round(sum(li.amount for li in ctx.line_items), 2)
-            reference_total = ctx.subtotal if ctx.subtotal is not None else ctx.total_amount
+            line_sum = round(sum(item.amount for item in ctx.line_items), 2)
+            reference = ctx.subtotal if ctx.subtotal is not None else ctx.total_amount
             checks.append(
                 self._compare(
                     name="line_items_sum_reconciliation",
-                    formula="sum(line_item.amount) ≈ subtotal (or total if no subtotal shown)",
-                    operands={"line_items_sum": line_total_sum},
-                    calculated=line_total_sum,
-                    reported=reference_total,
+                    formula="sum(line item amounts) ≈ subtotal (or total when no subtotal is shown)",
+                    operands={"line_items_sum": line_sum, "subtotal": ctx.subtotal, "total_amount": ctx.total_amount},
+                    calculated=line_sum,
+                    reported=reference,
                 )
             )
 
-        if ctx.subtotal is not None and ctx.tax_amount is not None:
-            calculated = round(ctx.subtotal + ctx.tax_amount - (ctx.discount or 0.0), 2)
+        if ctx.subtotal is not None:
             checks.append(
                 self._compare(
                     name="invoice_total_check",
                     formula="subtotal + tax_amount - discount ≈ total_amount",
                     operands={"subtotal": ctx.subtotal, "tax_amount": ctx.tax_amount, "discount": ctx.discount},
-                    calculated=calculated,
+                    calculated=round(ctx.subtotal + (ctx.tax_amount or 0.0) - (ctx.discount or 0.0), 2),
+                    reported=ctx.total_amount,
+                )
+            )
+        elif ctx.tax_inclusive and ctx.tax_amount is not None and ctx.total_amount is not None:
+            # GST/VAT already included in the printed total: check the implied
+            # net-of-tax amount against the tax actually charged.
+            net_of_tax = round(ctx.total_amount - ctx.tax_amount, 2)
+            checks.append(
+                self._compare(
+                    name="tax_inclusive_total_check",
+                    formula="(total_amount - tax_amount) + tax_amount ≈ total_amount (tax shown as included in total)",
+                    operands={"total_amount": ctx.total_amount, "tax_amount": ctx.tax_amount, "net_of_tax": net_of_tax},
+                    calculated=round(net_of_tax + ctx.tax_amount, 2),
                     reported=ctx.total_amount,
                 )
             )
@@ -146,12 +179,16 @@ class FinancialValidationService:
                     reported_value=ctx.total_amount,
                     variance=None,
                     status=ValidationStatus.NOT_APPLICABLE,
-                    message="Tax appears included in the displayed total, or subtotal was not separately printed.",
+                    message="No subtotal is printed on this document, so the total cannot be recomputed from its parts.",
                 )
             )
 
-        if ctx.cash_paid is not None and ctx.total_amount is not None:
-            calculated = round(ctx.cash_paid - ctx.total_amount, 2)
+        if ctx.cash_paid is not None or ctx.change is not None:
+            calculated = (
+                round(ctx.cash_paid - ctx.total_amount, 2)
+                if ctx.cash_paid is not None and ctx.total_amount is not None
+                else None
+            )
             checks.append(
                 self._compare(
                     name="cash_change_check",
@@ -164,19 +201,14 @@ class FinancialValidationService:
 
         return checks
 
-    # ---- Balance sheet ------------------------------------------------
+    # ---- Balance sheet ----------------------------------------------------
 
     def _validate_balance_sheet(self, outcome: ExtractionOutcome) -> list[ValidationCheck]:
         checks: list[ValidationCheck] = []
-        sections = outcome.sections
-        cl_section = sections.get("capital_and_liabilities")
-        assets_section = sections.get("assets")
-        cl_total_item = cl_section.find("total") if cl_section else None
-        assets_total_item = assets_section.find("total") if assets_section else None
-
         for period in outcome.periods:
-            total_liabilities = _item_value(cl_total_item, period)
-            total_assets = _item_value(assets_total_item, period)
+            total_liabilities = self._value(outcome, "total_liabilities", period)
+            total_assets = self._value(outcome, "total_assets", period)
+
             checks.append(
                 self._compare(
                     name=f"balance_sheet_equality[{period}]",
@@ -187,77 +219,53 @@ class FinancialValidationService:
                 )
             )
 
-            cl_component_sum = _sum_section(cl_section, cl_total_item.key if cl_total_item else None, period)
+            liabilities_components = _sum_components(outcome.sections.get("capital_and_liabilities"), period)
             checks.append(
                 self._compare(
                     name=f"capital_and_liabilities_reconciliation[{period}]",
-                    formula="sum(capital & liability components) ≈ reported Total Capital & Liabilities",
-                    operands={"component_sum": cl_component_sum, "reported_total": total_liabilities},
-                    calculated=cl_component_sum,
+                    formula="sum(capital & liability line items) ≈ reported Total Capital & Liabilities",
+                    operands={"component_sum": liabilities_components, "reported_total": total_liabilities},
+                    calculated=liabilities_components,
                     reported=total_liabilities,
                 )
             )
 
-            assets_component_sum = _sum_section(assets_section, assets_total_item.key if assets_total_item else None, period)
+            asset_components = _sum_components(outcome.sections.get("assets"), period)
             checks.append(
                 self._compare(
                     name=f"assets_reconciliation[{period}]",
-                    formula="sum(asset components) ≈ reported Total Assets",
-                    operands={"component_sum": assets_component_sum, "reported_total": total_assets},
-                    calculated=assets_component_sum,
+                    formula="sum(asset line items) ≈ reported Total Assets",
+                    operands={"component_sum": asset_components, "reported_total": total_assets},
+                    calculated=asset_components,
                     reported=total_assets,
                 )
             )
-
         return checks
 
-    # ---- Profit & loss --------------------------------------------------
+    # ---- Profit & loss ----------------------------------------------------
 
     def _validate_profit_and_loss(self, outcome: ExtractionOutcome) -> list[ValidationCheck]:
         checks: list[ValidationCheck] = []
-        sections = outcome.sections
-        income = sections.get("income")
-        expenditure = sections.get("expenditure")
-        profit = sections.get("profit")
-        appropriations = sections.get("appropriations")
-
-        interest_earned_item = income.find("interest earned") if income else None
-        other_income_item = income.find("other income") if income else None
-        total_income_item = income.find("total") if income else None
-
-        interest_expended_item = expenditure.find("interest expended") if expenditure else None
-        operating_expenses_item = expenditure.find("operating expenses") if expenditure else None
-        provisions_item = expenditure.find("provisions and contingencies", "provisions & contingencies") if expenditure else None
-        total_expenditure_item = expenditure.find("total") if expenditure else None
-
-        net_profit_item = profit.find("net profit for the year") if profit else None
-        minority_item = profit.find("minority interest") if profit else None
-        associates_item = profit.find("share in profit") if profit else None
-        attributable_item = profit.find("attributable to the group") if profit else None
-        brought_forward_item = profit.find("brought forward") if profit else None
-
-        total_appropriation_item = appropriations.find("total") if appropriations else None
-
         for period in outcome.periods:
-            interest_earned = _item_value(interest_earned_item, period)
-            other_income = _item_value(other_income_item, period)
-            total_income = _item_value(total_income_item, period)
-            calc_total_income = _sum_optional(interest_earned, other_income)
+            interest_earned = self._value(outcome, "interest_earned", period)
+            other_income = self._value(outcome, "other_income", period)
+            total_income = self._value(outcome, "total_income", period)
             checks.append(
                 self._compare(
                     name=f"total_income_check[{period}]",
                     formula="Interest Earned + Other Income ≈ Total Income",
                     operands={"interest_earned": interest_earned, "other_income": other_income},
-                    calculated=calc_total_income,
+                    calculated=_sum_optional(interest_earned, other_income)
+                    if interest_earned is not None and other_income is not None
+                    else None,
                     reported=total_income,
                 )
             )
 
-            interest_expended = _item_value(interest_expended_item, period)
-            operating_expenses = _item_value(operating_expenses_item, period)
-            provisions = _item_value(provisions_item, period)
-            total_expenditure = _item_value(total_expenditure_item, period)
-            calc_total_expenditure = _sum_optional(interest_expended, operating_expenses, provisions)
+            interest_expended = self._value(outcome, "interest_expended", period)
+            operating_expenses = self._value(outcome, "operating_expenses", period)
+            provisions = self._value(outcome, "provisions_and_contingencies", period)
+            total_expenditure = self._value(outcome, "total_expenditure", period)
             checks.append(
                 self._compare(
                     name=f"total_expenditure_check[{period}]",
@@ -267,123 +275,113 @@ class FinancialValidationService:
                         "operating_expenses": operating_expenses,
                         "provisions_and_contingencies": provisions,
                     },
-                    calculated=calc_total_expenditure,
+                    calculated=_sum_optional(interest_expended, operating_expenses, provisions)
+                    if None not in (interest_expended, operating_expenses, provisions)
+                    else None,
                     reported=total_expenditure,
                 )
             )
 
-            net_profit = _item_value(net_profit_item, period)
-            calc_net_profit = (
-                total_income - total_expenditure if total_income is not None and total_expenditure is not None else None
-            )
+            net_profit = self._value(outcome, "net_profit_for_the_year", period)
             checks.append(
                 self._compare(
                     name=f"net_profit_before_minority_check[{period}]",
                     formula="Total Income - Total Expenditure ≈ Consolidated Net Profit before Minority Interest",
                     operands={"total_income": total_income, "total_expenditure": total_expenditure},
-                    calculated=calc_net_profit,
+                    calculated=total_income - total_expenditure
+                    if total_income is not None and total_expenditure is not None
+                    else None,
                     reported=net_profit,
                 )
             )
 
-            minority = _item_value(minority_item, period)
-            associates = _item_value(associates_item, period)
-            attributable = _item_value(attributable_item, period)
-            calc_attributable = None
-            if net_profit is not None and minority is not None:
-                calc_attributable = net_profit - minority + (associates or 0.0)
+            minority = self._value(outcome, "minority_interest", period)
+            associates = self._value(outcome, "share_in_profits_of_associates", period)
+            attributable = self._value(outcome, "consolidated_profit_attributable_to_group", period)
             checks.append(
                 self._compare(
                     name=f"net_profit_attributable_check[{period}]",
-                    formula="Net Profit before Minority Interest - Minority Interest (+ Share in Associates) ≈ Consolidated Net Profit attributable to the Group",
-                    operands={"net_profit": net_profit, "minority_interest": minority, "share_in_profits_of_associates": associates},
-                    calculated=calc_attributable,
+                    formula=(
+                        "Net Profit before Minority Interest - Minority Interest + Share in Profits of Associates "
+                        "≈ Consolidated Net Profit attributable to the Group"
+                    ),
+                    operands={
+                        "net_profit_for_the_year": net_profit,
+                        "minority_interest": minority,
+                        "share_in_profits_of_associates": associates,
+                    },
+                    calculated=net_profit - minority + (associates or 0.0)
+                    if net_profit is not None and minority is not None
+                    else None,
                     reported=attributable,
                 )
             )
 
-            brought_forward = _item_value(brought_forward_item, period)
-            total_appropriation = _item_value(total_appropriation_item, period)
-            calc_appropriation = _sum_optional(attributable, brought_forward)
+            brought_forward = self._value(outcome, "brought_forward_profit", period)
+            total_appropriation = self._value(outcome, "total_available_for_appropriation", period)
             checks.append(
                 self._compare(
                     name=f"appropriation_check[{period}]",
                     formula="Current Profit + Brought Forward Profit ≈ Total Available for Appropriation",
                     operands={"current_profit": attributable, "brought_forward_profit": brought_forward},
-                    calculated=calc_appropriation,
+                    calculated=_sum_optional(attributable, brought_forward)
+                    if attributable is not None and brought_forward is not None
+                    else None,
                     reported=total_appropriation,
                 )
             )
-
         return checks
 
     # ---- Cash flow --------------------------------------------------------
 
     def _validate_cash_flow(self, outcome: ExtractionOutcome) -> list[ValidationCheck]:
         checks: list[ValidationCheck] = []
-        sections = outcome.sections
-        operating = sections.get("operating")
-        investing = sections.get("investing")
-        financing = sections.get("financing")
-
-        operating_item = operating.find("net cash flow", "net cash used in", "net cash generated") if operating else None
-        investing_item = (
-            investing.find("net cash used in investing", "net cash generated from investing", "net cash flow from investing")
-            if investing
-            else None
-        )
-        financing_item = (
-            financing.find("net cash generated from financing", "net cash used in financing") if financing else None
-        )
-        fx_item = financing.find("exchange fluctuation", "translation reserve") if financing else None
-        amalgamation_item = financing.find("amalgamation") if financing else None
-        net_increase_item = financing.find("net increase", "net decrease in cash") if financing else None
-        opening_item = financing.find("as at april", "opening") if financing else None
-        closing_item = financing.find("as at march", "closing") if financing else None
-
         for period in outcome.periods:
-            operating_cf = _item_value(operating_item, period)
-            investing_cf = _item_value(investing_item, period)
-            financing_cf = _item_value(financing_item, period)
-            fx = _item_value(fx_item, period)
-            net_increase = _item_value(net_increase_item, period)
+            operating = self._value(outcome, "operating_cash_flow", period)
+            investing = self._value(outcome, "investing_cash_flow", period)
+            financing = self._value(outcome, "financing_cash_flow", period)
+            fx = self._value(outcome, "fx_translation_adjustment", period)
+            net_change = self._value(outcome, "net_change_in_cash", period)
 
-            calc_net_increase = None
-            if operating_cf is not None and investing_cf is not None and financing_cf is not None:
-                calc_net_increase = operating_cf + investing_cf + financing_cf + (fx or 0.0)
             checks.append(
                 self._compare(
                     name=f"net_change_in_cash_check[{period}]",
-                    formula="Operating CF + Investing CF + Financing CF + FX/Translation Adjustment ≈ Net Increase in Cash",
+                    formula=(
+                        "Operating CF + Investing CF + Financing CF + FX/Translation Adjustment "
+                        "≈ Net Increase in Cash & Cash Equivalents"
+                    ),
                     operands={
-                        "operating_cash_flow": operating_cf,
-                        "investing_cash_flow": investing_cf,
-                        "financing_cash_flow": financing_cf,
+                        "operating_cash_flow": operating,
+                        "investing_cash_flow": investing,
+                        "financing_cash_flow": financing,
                         "fx_translation_adjustment": fx,
                     },
-                    calculated=calc_net_increase,
-                    reported=net_increase,
+                    calculated=operating + investing + financing + (fx or 0.0)
+                    if None not in (operating, investing, financing)
+                    else None,
+                    reported=net_change,
                 )
             )
 
-            opening_cash = _item_value(opening_item, period)
-            closing_cash = _item_value(closing_item, period)
-            amalgamation = _item_value(amalgamation_item, period)
-            calc_closing = None
-            if opening_cash is not None and net_increase is not None:
-                calc_closing = opening_cash + net_increase + (amalgamation or 0.0)
+            opening = self._value(outcome, "opening_cash", period)
+            closing = self._value(outcome, "closing_cash", period)
+            amalgamation = self._value(outcome, "cash_on_amalgamation_adjustment", period)
             checks.append(
                 self._compare(
                     name=f"closing_cash_check[{period}]",
-                    formula="Opening Cash + Net Increase in Cash + Amalgamation/Other Adjustments ≈ Closing Cash",
+                    formula=(
+                        "Opening Cash + Net Increase in Cash + Cash Acquired on Amalgamation/Other Adjustments "
+                        "≈ Closing Cash"
+                    ),
                     operands={
-                        "opening_cash": opening_cash,
-                        "net_change_in_cash": net_increase,
+                        "opening_cash": opening,
+                        "net_change_in_cash": net_change,
                         "cash_on_amalgamation_adjustment": amalgamation,
                     },
-                    calculated=calc_closing,
-                    reported=closing_cash,
+                    calculated=opening + net_change + (amalgamation or 0.0)
+                    if opening is not None and net_change is not None
+                    else None,
+                    reported=closing,
                 )
             )
-
         return checks
