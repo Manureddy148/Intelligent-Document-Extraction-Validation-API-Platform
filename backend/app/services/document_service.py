@@ -55,8 +55,19 @@ class DocumentService:
         logger.info("Processing document '%s' as %s", filename, document_type.value)
 
         file_validation = self.validation_service.validate(filename, content)
+        logger.info(
+            "Validated '%s': %s, %s page(s), %.1fKB",
+            filename, file_validation.file_type, file_validation.page_count, len(content) / 1024,
+        )
 
+        ocr_started = time.perf_counter()
         pages = self.ocr_service.extract_pages(content, file_validation.file_type)
+        logger.info(
+            "Read %s page(s) of '%s' in %sms (ocr=%s)",
+            len(pages), filename, int((time.perf_counter() - ocr_started) * 1000),
+            any(page.ocr_used for page in pages),
+        )
+
         outcome = self.extraction_service.extract(pages, document_type)
 
         llm_assisted = self._recover_missing_fields(pages, outcome, document_type)

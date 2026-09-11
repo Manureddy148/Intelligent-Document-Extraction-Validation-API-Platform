@@ -237,13 +237,30 @@ class ExtractionService:
             ),
             "total_expenditure": _field_from_item(total_expenditure),
             "net_profit_for_the_year": _field_from_item(find_preferring_section(sections, "profit", "net profit for the year")),
-            "minority_interest": _field_from_item(find_preferring_section(sections, "profit", "minority interest")),
+            "minority_interest": _field_from_item(
+                find_preferring_section(
+                    sections,
+                    "profit",
+                    "minority interest",
+                    # "Net Profit for the year *before* Minority Interest" is the
+                    # profit row and "Transfer to / (from) Minority Interest" an
+                    # appropriation; neither is the minority interest deduction.
+                    exclude=("before minority interest", "transfer to", "increase in minority"),
+                )
+            ),
             "share_in_profits_of_associates": _field_from_item(find_preferring_section(sections, "profit", "share in profit")),
             "consolidated_profit_attributable_to_group": _field_from_item(attributable),
             "brought_forward_profit": _field_from_item(find_preferring_section(sections, "profit", "brought forward")),
+            # Some years carry an extra row into the appropriation total
+            # ("Impact on amalgamation", "Addition on amalgamation (net)").
+            # Leaving it out makes the appropriation check fail on a document
+            # that in fact adds up.
+            "addition_on_amalgamation": _field_from_item(
+                find_in_sections(sections, "profit", "on amalgamation")
+            ),
             "total_available_for_appropriation": _field_from_item(total_appropriation),
             "balance_carried_to_balance_sheet": _field_from_item(
-                find_preferring_section(sections, "appropriations", "carried over to balance sheet")
+                find_preferring_section(sections, "appropriations", "carried over to", "balance carried")
             ),
             # Generic profit & loss aliases (case study section 2). Null where a
             # banking-format statement does not disclose an equivalent line.

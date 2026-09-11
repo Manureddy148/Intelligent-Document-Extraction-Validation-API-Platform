@@ -135,11 +135,26 @@ class FinancialValidationService:
 
         if ctx.line_items:
             line_sum = round(sum(item.amount for item in ctx.line_items), 2)
-            reference = ctx.subtotal if ctx.subtotal is not None else ctx.total_amount
+            # Compare against the subtotal, never the grand total: a total that
+            # includes tax or service charges cannot equal the sum of the line
+            # items, so checking against it would report a failure the document
+            # does not support. A total is only comparable when the document
+            # shows no tax at all.
+            if ctx.line_items_incomplete:
+                # Rows of the item table were unreadable, so this sum is a sum
+                # of *some* of the items. Comparing it would report a
+                # discrepancy that belongs to the OCR, not to the invoice.
+                reference, reference_label = None, "subtotal"
+            elif ctx.subtotal is not None:
+                reference, reference_label = ctx.subtotal, "subtotal"
+            elif ctx.tax_amount is None and not ctx.tax_inclusive:
+                reference, reference_label = ctx.total_amount, "total_amount"
+            else:
+                reference, reference_label = None, "subtotal"
             checks.append(
                 self._compare(
                     name="line_items_sum_reconciliation",
-                    formula="sum(line item amounts) ≈ subtotal (or total when no subtotal is shown)",
+                    formula=f"sum(line item amounts) ≈ {reference_label}",
                     operands={"line_items_sum": line_sum, "subtotal": ctx.subtotal, "total_amount": ctx.total_amount},
                     calculated=line_sum,
                     reported=reference,
@@ -321,13 +336,21 @@ class FinancialValidationService:
             )
 
             brought_forward = self._value(outcome, "brought_forward_profit", period)
+            amalgamation_addition = self._value(outcome, "addition_on_amalgamation", period)
             total_appropriation = self._value(outcome, "total_available_for_appropriation", period)
             checks.append(
                 self._compare(
                     name=f"appropriation_check[{period}]",
-                    formula="Current Profit + Brought Forward Profit ≈ Total Available for Appropriation",
-                    operands={"current_profit": attributable, "brought_forward_profit": brought_forward},
-                    calculated=_sum_optional(attributable, brought_forward)
+                    formula=(
+                        "Current Profit + Brought Forward Profit + Addition on Amalgamation "
+                        "≈ Total Available for Appropriation"
+                    ),
+                    operands={
+                        "current_profit": attributable,
+                        "brought_forward_profit": brought_forward,
+                        "addition_on_amalgamation": amalgamation_addition,
+                    },
+                    calculated=_sum_optional(attributable, brought_forward, amalgamation_addition)
                     if attributable is not None and brought_forward is not None
                     else None,
                     reported=total_appropriation,

@@ -88,7 +88,8 @@ A financial check that does not reconcile is a *business* outcome, not a
 processing failure, so it is reported separately under `validation.overall_status`.
 A document can therefore be `processing_status: PASS` with
 `validation.overall_status: FAIL` — see
-[`sample_outputs/06_profit_and_loss_2025_validation_failure.json`](sample_outputs/06_profit_and_loss_2025_validation_failure.json).
+[`sample_outputs/06_invoice_line_items_do_not_match_total.json`](sample_outputs/06_invoice_line_items_do_not_match_total.json),
+where the five line items total $3,480 against a printed total of $5,257.
 
 ## Technology choices
 
@@ -343,7 +344,7 @@ use the managed database so processed results survive a restart.
 ## Testing
 
 ```bash
-cd backend && pytest            # 45 tests
+cd backend && pytest            # 58 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size
@@ -356,8 +357,9 @@ routes.
 
 [`sample_outputs/`](sample_outputs/) holds real responses produced by this code:
 all four document types, a two-page statement, scanned receipts (one that
-reconciles, one whose tax line OCR could not read), a validation failure, an
-unreadable scan, the dashboard list, and every error case.
+reconciles, one whose tax line OCR could not read, one whose line items do not
+match its printed total), an unreadable scan, the dashboard list, and every
+error case.
 
 ## Measured accuracy on the provided dataset
 
@@ -368,23 +370,34 @@ document genuinely add up, so this doubles as an extraction-accuracy measure.
 
 | Document type | Docs | PASS | FAIL | NOT_APPLICABLE |
 | --- | --- | --- | --- | --- |
-| Balance sheet | 10 | 44 | 1 | 15 |
-| Profit & loss | 10 | 72 | 6 | 22 |
+| Balance sheet | 10 | 45 | 0 | 15 |
+| Profit & loss | 10 | 76 | 0 | 24 |
 | Cash flow | 10 | 32 | 0 | 8 |
-| Invoice | 20 | 13 | 3 | 19 |
-| **Total** | **50** | **209** | **10** | **64** |
+| Invoice | 20 | 27 | 2 | 20 |
+| **Total** | **50** | **228** | **2** | **67** |
 
 All 50 returned HTTP 200 with no crash; 48 finished `processing_status: PASS`
 and 2 (the 2022 statements) `FAILED` because their scans are too poor to yield
-any key field. Median processing time 1.8 s, maximum 4.8 s.
+any key field. Median processing time 2.1 s, maximum 5.1 s.
 
-Clean statement scans reconcile fully (2017, 2018, 2023, 2026 pass every
-check). The `NOT_APPLICABLE` results concentrate in the 2020–2022 statement
-scans, where OCR cannot recover the row labels, and in receipts that print
-neither a subtotal/tax pair nor a cash/change pair — there is simply nothing to
-reconcile. The invoice `FAIL`s are genuine: on those receipts OCR misread
-digits (`1x 12.58 12.50`), so the printed figures do not add up as read, which
-is exactly what the check exists to surface.
+Every statement check now reconciles. The `NOT_APPLICABLE` results concentrate
+in the 2020–2022 statement scans, where OCR cannot recover the row labels, and
+in receipts that print neither a subtotal/tax pair nor a cash/change pair —
+there is simply nothing to reconcile.
+
+The two remaining `FAIL`s were each read back against the source image and are
+genuine discrepancies in the documents as printed, which is exactly what the
+checks exist to surface:
+
+- `batch3-1495.jpg` — the five line items total $3,480 against a printed total
+  of $5,257.
+- `X51005719883.jpg` — RM 150.00 tendered against a RM 106.50 bill should
+  return RM 43.50; the receipt prints RM 41.50.
+
+A `FAIL` is only ever reported when every operand was actually read off the
+page. Where a component row is missing the check is `NOT_APPLICABLE` instead —
+a figure that was never read is not evidence of a discrepancy, and treating it
+as zero would manufacture one.
 
 Every default in the OCR path was chosen by re-running this benchmark rather
 than by assumption:
@@ -395,8 +408,11 @@ than by assumption:
 | Sections also open on their first line item, not just a heading | 136 / 8 / 56 |
 | Greyscale before OCR | 144 / 11 / 45 |
 | Rejoin figures OCR split in half | **148 / 7 / 45** on statements |
-| Two-row receipt line items, tax-exclusive/inclusive totals, comma decimals | **209 / 10 / 64** across all 50 documents |
-| 300 DPI instead of 200 | 127 / 16 / 57 — *rejected* |
+| Two-row receipt line items, tax-exclusive/inclusive totals, comma decimals | 209 / 10 / 64 across all 50 documents |
+| Line-item sums compared to the subtotal, not a tax-inclusive total | 217 / 16 / 65 |
+| Keyword exclusions (`net profit *before* minority interest`), amalgamation operand, two-digit comma decimals | 226 / 3 / 68 |
+| Invoice rows read only inside the item table, columns resolved by arithmetic | **228 / 2 / 67** across all 50 documents |
+| 300 DPI instead of 200 | 215 / 9 / 73 — *rejected*, re-measured against the final extractor |
 | Second colour OCR pass unioned with the first | 149 / 7 / 44 for 2× the latency — *rejected* |
 
 ## Known limitations

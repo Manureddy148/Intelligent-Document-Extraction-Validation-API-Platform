@@ -165,7 +165,10 @@ def scan_sections(
 
 
 def find_in_sections(
-    sections: dict[str, StatementSection], section_name: str, *keywords: str
+    sections: dict[str, StatementSection],
+    section_name: str,
+    *keywords: str,
+    exclude: tuple[str, ...] = (),
 ) -> StatementLineItem | None:
     """Look for a line item inside one section only.
 
@@ -175,19 +178,26 @@ def find_in_sections(
     section = sections.get(section_name)
     if not section:
         return None
-    return section.find(*keywords)
+    return section.find(*keywords, exclude=exclude)
 
 
-def find_anywhere(sections: dict[str, StatementSection], *keywords: str) -> StatementLineItem | None:
+def find_anywhere(
+    sections: dict[str, StatementSection], *keywords: str, exclude: tuple[str, ...] = ()
+) -> StatementLineItem | None:
     for section in sections.values():
-        found = section.find(*keywords)
+        found = section.find(*keywords, exclude=exclude)
         if found:
             return found
     return None
 
 
 def find_preferring_section(
-    sections: dict[str, StatementSection], section_name: str, *keywords: str
+    sections: dict[str, StatementSection],
+    section_name: str,
+    *keywords: str,
+    exclude: tuple[str, ...] = (),
 ) -> StatementLineItem | None:
     """Look in the expected section first, then anywhere. Self-describing labels only."""
-    return find_in_sections(sections, section_name, *keywords) or find_anywhere(sections, *keywords)
+    return find_in_sections(sections, section_name, *keywords, exclude=exclude) or find_anywhere(
+        sections, *keywords, exclude=exclude
+    )

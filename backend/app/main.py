@@ -1,3 +1,5 @@
+import time
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -8,7 +10,7 @@ from app.api.routes import documents, frontend, health
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.core.exceptions import AppError
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import configure_logging, get_logger, request_id_var
 from app.core.paths import FRONTEND_STATIC_DIR
 
 settings = get_settings()
@@ -33,6 +35,24 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    """Tag every log line from this request with one id, and time the request."""
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    token = request_id_var.set(request_id)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    finally:
+        request_id_var.reset(token)
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "%s %s -> %s in %sms", request.method, request.url.path, response.status_code, duration_ms
+    )
+    return response
 
 
 @app.exception_handler(AppError)

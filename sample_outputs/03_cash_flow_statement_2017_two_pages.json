@@ -1,1 +1,471 @@
-{"document_name":"Consolidated Cash Flow Statement 2017.pdf","document_type":"cash_flow_statement","processing_status":"PASS","overall_confidence":null,"file_validation":{"file_type":"application/pdf","is_supported":true,"is_readable":true,"page_count":2,"status":"PASS","reason":null},"extracted_data":{"statement_periods":["31-Mar-17","31-Mar-16"],"currency":{"value":null,"page_number":null,"source_text":null},"unit_multiplier":{"value":null,"page_number":null,"source_text":null},"profit_before_tax":{"value":{"31-Mar-17":233311478.0,"31-Mar-16":194949948.0},"page_number":1,"source_text":"Consolidated profit before income tax 233,311,478 194,949,948"},"operating_cash_flow":{"value":{"31-Mar-17":172815931.0,"31-Mar-16":-344353663.0},"page_number":1,"source_text":"Net cash flow (used in) / from operating activities 172,815,931 (344,353,663)"},"investing_cash_flow":{"value":{"31-Mar-17":-11476802.0,"31-Mar-16":-8655510.0},"page_number":1,"source_text":"Net cash used in investing activities (11,476,802) (8,655,510)"},"financing_cash_flow":{"value":{"31-Mar-17":-58929743.0,"31-Mar-16":378151341.0},"page_number":2,"source_text":"Net cash generated from financing activities (58,929,743) 378,151,341"},"fx_translation_adjustment":{"value":{"31-Mar-17":-282622.0,"31-Mar-16":282433.0},"page_number":2,"source_text":"Effect of exchange fluctuation on translation reserve (282,622) 282,433"},"cash_on_amalgamation_adjustment":{"value":{"31-Mar-17":295617.0,"31-Mar-16":null},"page_number":2,"source_text":"Cash and cash equivalents on amalgamation [Refer Schedule 18(1)] 295,617 -"},"net_change_in_cash":{"value":{"31-Mar-17":102422381.0,"31-Mar-16":25424601.0},"page_number":2,"source_text":"Net increase / (decrease) in cash and cash equivalents 102,422,381 25,424,601"},"opening_cash":{"value":{"31-Mar-17":390688815.0,"31-Mar-16":365264214.0},"page_number":2,"source_text":"Cash and cash equivalents as at April 1st (Schedules 6 and 7) 390,688,815 365,264,214"},"closing_cash":{"value":{"31-Mar-17":493111196.0,"31-Mar-16":390688815.0},"page_number":2,"source_text":"Cash and cash equivalents as at March 31st (Schedules 6 and 7) 493,111,196 390,688,815"},"line_items":{"operating":[{"label":"Consolidated profit before income tax","values":{"31-Mar-17":233311478.0,"31-Mar-16":194949948.0},"page_number":1,"source_text":"Consolidated profit before income tax 233,311,478 194,949,948"},{"label":"Depreciation on fixed assets","values":{"31-Mar-17":8861876.0,"31-Mar-16":7380326.0},"page_number":1,"source_text":"Depreciation on fixed assets 8,861,876 7,380,326"},{"label":"(Profit) / loss on revaluation of investments","values":{"31-Mar-17":-87543.0,"31-Mar-16":173689.0},"page_number":1,"source_text":"(Profit) / loss on revaluation of investments (87,543) 173,689"},{"label":"Amortisation of premia on held to maturity investments","values":{"31-Mar-17":1756569.0,"31-Mar-16":1002801.0},"page_number":1,"source_text":"Amortisation of premia on held to maturity investments 1,756,569 1,002,801"},{"label":"(Profit) / loss on sale of fixed assets","values":{"31-Mar-17":16229.0,"31-Mar-16":1185.0},"page_number":1,"source_text":"(Profit) / loss on sale of fixed assets 16,229 1,185"},{"label":"Provision / charge for non performing assets","values":{"31-Mar-17":37024296.0,"31-Mar-16":25179864.0},"page_number":1,"source_text":"Provision / charge for non performing assets 37,024,296 25,179,864"},{"label":"Provision for dimunition in value of Investments","values":{"31-Mar-17":-76417.0,"31-Mar-16":146543.0},"page_number":1,"source_text":"Provision for dimunition in value of Investments (76,417) 146,543"},{"label":"Floating provisions","values":{"31-Mar-17":250000.0,"31-Mar-16":1150000.0},"page_number":1,"source_text":"Floating provisions 250,000 1,150,000"},{"label":"Provision for standard assets","values":{"31-Mar-17":4312322.0,"31-Mar-16":4648890.0},"page_number":1,"source_text":"Provision for standard assets 4,312,322 4,648,890"},{"label":"Contingency provisions","values":{"31-Mar-17":388440.0,"31-Mar-16":218602.0},"page_number":1,"source_text":"Contingency provisions 388,440 218,602"},{"label":"Share in current year's profits of associates","values":{"31-Mar-17":-23393.0,"31-Mar-16":-37278.0},"page_number":1,"source_text":"Share in current year's profits of associates (23,393) (37,278)"},{"label":"(Increase) / decrease in investments (excluding investments in subsidiaries)","values":{"31-Mar-17":-173257700.0,"31-Mar-16":-391159616.0},"page_number":1,"source_text":"(Increase) / decrease in investments (excluding investments in subsidiaries) (173,257,700) (391,159,616)"},{"label":"(Increase) / decrease in advances","values":{"31-Mar-17":-1018904990.0,"31-Mar-16":-1066012996.0},"page_number":1,"source_text":"(Increase) / decrease in advances (1,018,904,990) (1,066,012,996)"},{"label":"Increase / (decrease) in deposits","values":{"31-Mar-17":972609590.0,"31-Mar-16":955896412.0},"page_number":1,"source_text":"Increase / (decrease) in deposits 972,609,590 955,896,412"},{"label":"(Increase) / decrease in other assets","values":{"31-Mar-17":-44855329.0,"31-Mar-16":-38485747.0},"page_number":1,"source_text":"(Increase) / decrease in other assets (44,855,329) (38,485,747)"},{"label":"Increase / (decrease) in other liabilities and provisions","values":{"31-Mar-17":228337692.0,"31-Mar-16":31324658.0},"page_number":1,"source_text":"Increase / (decrease) in other liabilities and provisions 228,337,692 31,324,658"},{"label":"Direct taxes paid (net of refunds)","values":{"31-Mar-17":-76847189.0,"31-Mar-16":-70730944.0},"page_number":1,"source_text":"Direct taxes paid (net of refunds) (76,847,189) (70,730,944)"},{"label":"Net cash flow (used in) / from operating activities","values":{"31-Mar-17":172815931.0,"31-Mar-16":-344353663.0},"page_number":1,"source_text":"Net cash flow (used in) / from operating activities 172,815,931 (344,353,663)"}],"investing":[{"label":"Purchase of fixed assets","values":{"31-Mar-17":-11577570.0,"31-Mar-16":-8771635.0},"page_number":1,"source_text":"Purchase of fixed assets (11,577,570) (8,771,635)"},{"label":"Proceeds from sale of fixed assets","values":{"31-Mar-17":100768.0,"31-Mar-16":116125.0},"page_number":1,"source_text":"Proceeds from sale of fixed assets 100,768 116,125"},{"label":"Net cash used in investing activities","values":{"31-Mar-17":-11476802.0,"31-Mar-16":-8655510.0},"page_number":1,"source_text":"Net cash used in investing activities (11,476,802) (8,655,510)"}],"financing":[{"label":"Increase in minority interest","values":{"31-Mar-17":818605.0,"31-Mar-16":189954.0},"page_number":2,"source_text":"Increase in minority interest 818,605 189,954"},{"label":"Money received on exercise of stock options by employees","values":{"31-Mar-17":22615161.0,"31-Mar-16":12229008.0},"page_number":2,"source_text":"Money received on exercise of stock options by employees 22,615,161 12,229,008"},{"label":"Redemption of subordinated debt","values":{"31-Mar-17":-19084500.0,"31-Mar-16":-12020000.0},"page_number":2,"source_text":"Redemption of subordinated debt (19,084,500) (12,020,000)"},{"label":"Dividend paid during the year","values":{"31-Mar-17":-24083093.0,"31-Mar-16":-20091666.0},"page_number":2,"source_text":"Dividend paid during the year (24,083,093) (20,091,666)"},{"label":"Tax on dividend","values":{"31-Mar-17":-5297258.0,"31-Mar-16":-4237089.0},"page_number":2,"source_text":"Tax on dividend (5,297,258) (4,237,089)"},{"label":"Net cash generated from financing activities","values":{"31-Mar-17":-58929743.0,"31-Mar-16":378151341.0},"page_number":2,"source_text":"Net cash generated from financing activities (58,929,743) 378,151,341"},{"label":"Effect of exchange fluctuation on translation reserve","values":{"31-Mar-17":-282622.0,"31-Mar-16":282433.0},"page_number":2,"source_text":"Effect of exchange fluctuation on translation reserve (282,622) 282,433"},{"label":"Cash and cash equivalents on amalgamation [Refer Schedule 18(1)]","values":{"31-Mar-17":295617.0,"31-Mar-16":null},"page_number":2,"source_text":"Cash and cash equivalents on amalgamation [Refer Schedule 18(1)] 295,617 -"},{"label":"Net increase / (decrease) in cash and cash equivalents","values":{"31-Mar-17":102422381.0,"31-Mar-16":25424601.0},"page_number":2,"source_text":"Net increase / (decrease) in cash and cash equivalents 102,422,381 25,424,601"},{"label":"Cash and cash equivalents as at April 1st (Schedules and","values":{"31-Mar-17":390688815.0,"31-Mar-16":365264214.0},"page_number":2,"source_text":"Cash and cash equivalents as at April 1st (Schedules 6 and 7) 390,688,815 365,264,214"},{"label":"Cash and cash equivalents as at March 31st (Schedules and","values":{"31-Mar-17":493111196.0,"31-Mar-16":390688815.0},"page_number":2,"source_text":"Cash and cash equivalents as at March 31st (Schedules 6 and 7) 493,111,196 390,688,815"}]}},"validation":{"checks":[{"name":"net_change_in_cash_check[31-Mar-17]","formula":"Operating CF + Investing CF + Financing CF + FX/Translation Adjustment ≈ Net Increase in Cash & Cash Equivalents","operands":{"operating_cash_flow":172815931.0,"investing_cash_flow":-11476802.0,"financing_cash_flow":-58929743.0,"fx_translation_adjustment":-282622.0},"calculated_value":102126764.0,"reported_value":102422381.0,"variance":-295617.0,"status":"PASS","message":null},{"name":"closing_cash_check[31-Mar-17]","formula":"Opening Cash + Net Increase in Cash + Cash Acquired on Amalgamation/Other Adjustments ≈ Closing Cash","operands":{"opening_cash":390688815.0,"net_change_in_cash":102422381.0,"cash_on_amalgamation_adjustment":295617.0},"calculated_value":493406813.0,"reported_value":493111196.0,"variance":295617.0,"status":"PASS","message":null},{"name":"net_change_in_cash_check[31-Mar-16]","formula":"Operating CF + Investing CF + Financing CF + FX/Translation Adjustment ≈ Net Increase in Cash & Cash Equivalents","operands":{"operating_cash_flow":-344353663.0,"investing_cash_flow":-8655510.0,"financing_cash_flow":378151341.0,"fx_translation_adjustment":282433.0},"calculated_value":25424601.0,"reported_value":25424601.0,"variance":0.0,"status":"PASS","message":null},{"name":"closing_cash_check[31-Mar-16]","formula":"Opening Cash + Net Increase in Cash + Cash Acquired on Amalgamation/Other Adjustments ≈ Closing Cash","operands":{"opening_cash":365264214.0,"net_change_in_cash":25424601.0,"cash_on_amalgamation_adjustment":null},"calculated_value":390688815.0,"reported_value":390688815.0,"variance":0.0,"status":"PASS","message":null}],"overall_status":"PASS","issues":[]},"processing_metadata":{"ocr_used":true,"ocr_engine":"tesseract","extraction_method":"rule_based_layout","llm_model":null,"processed_at":"2026-09-10T17:10:39.578604Z","processing_time_ms":3970,"pages_processed":2}}
+{
+  "document_name": "Consolidated Cash Flow Statement 2017.pdf",
+  "document_type": "cash_flow_statement",
+  "processing_status": "PASS",
+  "overall_confidence": null,
+  "file_validation": {
+    "file_type": "application/pdf",
+    "is_supported": true,
+    "is_readable": true,
+    "page_count": 2,
+    "status": "PASS",
+    "reason": null
+  },
+  "extracted_data": {
+    "statement_periods": [
+      "31-Mar-17",
+      "31-Mar-16"
+    ],
+    "currency": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "unit_multiplier": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "profit_before_tax": {
+      "value": {
+        "31-Mar-17": 233311478.0,
+        "31-Mar-16": 194949948.0
+      },
+      "page_number": 1,
+      "source_text": "Consolidated profit before income tax 233,311,478 194,949,948"
+    },
+    "operating_cash_flow": {
+      "value": {
+        "31-Mar-17": 172815931.0,
+        "31-Mar-16": -344353663.0
+      },
+      "page_number": 1,
+      "source_text": "Net cash flow (used in) / from operating activities 172,815,931 (344,353,663)"
+    },
+    "investing_cash_flow": {
+      "value": {
+        "31-Mar-17": -11476802.0,
+        "31-Mar-16": -8655510.0
+      },
+      "page_number": 1,
+      "source_text": "Net cash used in investing activities (11,476,802) (8,655,510)"
+    },
+    "financing_cash_flow": {
+      "value": {
+        "31-Mar-17": -58929743.0,
+        "31-Mar-16": 378151341.0
+      },
+      "page_number": 2,
+      "source_text": "Net cash generated from financing activities (58,929,743) 378,151,341"
+    },
+    "fx_translation_adjustment": {
+      "value": {
+        "31-Mar-17": -282622.0,
+        "31-Mar-16": 282433.0
+      },
+      "page_number": 2,
+      "source_text": "Effect of exchange fluctuation on translation reserve (282,622) 282,433"
+    },
+    "cash_on_amalgamation_adjustment": {
+      "value": {
+        "31-Mar-17": 295617.0,
+        "31-Mar-16": null
+      },
+      "page_number": 2,
+      "source_text": "Cash and cash equivalents on amalgamation [Refer Schedule 18(1)] 295,617 -"
+    },
+    "net_change_in_cash": {
+      "value": {
+        "31-Mar-17": 102422381.0,
+        "31-Mar-16": 25424601.0
+      },
+      "page_number": 2,
+      "source_text": "Net increase / (decrease) in cash and cash equivalents 102,422,381 25,424,601"
+    },
+    "opening_cash": {
+      "value": {
+        "31-Mar-17": 390688815.0,
+        "31-Mar-16": 365264214.0
+      },
+      "page_number": 2,
+      "source_text": "Cash and cash equivalents as at April 1st (Schedules 6 and 7) 390,688,815 365,264,214"
+    },
+    "closing_cash": {
+      "value": {
+        "31-Mar-17": 493111196.0,
+        "31-Mar-16": 390688815.0
+      },
+      "page_number": 2,
+      "source_text": "Cash and cash equivalents as at March 31st (Schedules 6 and 7) 493,111,196 390,688,815"
+    },
+    "line_items": {
+      "operating": [
+        {
+          "label": "Consolidated profit before income tax",
+          "values": {
+            "31-Mar-17": 233311478.0,
+            "31-Mar-16": 194949948.0
+          },
+          "page_number": 1,
+          "source_text": "Consolidated profit before income tax 233,311,478 194,949,948"
+        },
+        {
+          "label": "Depreciation on fixed assets",
+          "values": {
+            "31-Mar-17": 8861876.0,
+            "31-Mar-16": 7380326.0
+          },
+          "page_number": 1,
+          "source_text": "Depreciation on fixed assets 8,861,876 7,380,326"
+        },
+        {
+          "label": "(Profit) / loss on revaluation of investments",
+          "values": {
+            "31-Mar-17": -87543.0,
+            "31-Mar-16": 173689.0
+          },
+          "page_number": 1,
+          "source_text": "(Profit) / loss on revaluation of investments (87,543) 173,689"
+        },
+        {
+          "label": "Amortisation of premia on held to maturity investments",
+          "values": {
+            "31-Mar-17": 1756569.0,
+            "31-Mar-16": 1002801.0
+          },
+          "page_number": 1,
+          "source_text": "Amortisation of premia on held to maturity investments 1,756,569 1,002,801"
+        },
+        {
+          "label": "(Profit) / loss on sale of fixed assets",
+          "values": {
+            "31-Mar-17": 16229.0,
+            "31-Mar-16": 1185.0
+          },
+          "page_number": 1,
+          "source_text": "(Profit) / loss on sale of fixed assets 16,229 1,185"
+        },
+        {
+          "label": "Provision / charge for non performing assets",
+          "values": {
+            "31-Mar-17": 37024296.0,
+            "31-Mar-16": 25179864.0
+          },
+          "page_number": 1,
+          "source_text": "Provision / charge for non performing assets 37,024,296 25,179,864"
+        },
+        {
+          "label": "Provision for dimunition in value of Investments",
+          "values": {
+            "31-Mar-17": -76417.0,
+            "31-Mar-16": 146543.0
+          },
+          "page_number": 1,
+          "source_text": "Provision for dimunition in value of Investments (76,417) 146,543"
+        },
+        {
+          "label": "Floating provisions",
+          "values": {
+            "31-Mar-17": 250000.0,
+            "31-Mar-16": 1150000.0
+          },
+          "page_number": 1,
+          "source_text": "Floating provisions 250,000 1,150,000"
+        },
+        {
+          "label": "Provision for standard assets",
+          "values": {
+            "31-Mar-17": 4312322.0,
+            "31-Mar-16": 4648890.0
+          },
+          "page_number": 1,
+          "source_text": "Provision for standard assets 4,312,322 4,648,890"
+        },
+        {
+          "label": "Contingency provisions",
+          "values": {
+            "31-Mar-17": 388440.0,
+            "31-Mar-16": 218602.0
+          },
+          "page_number": 1,
+          "source_text": "Contingency provisions 388,440 218,602"
+        },
+        {
+          "label": "Share in current year's profits of associates",
+          "values": {
+            "31-Mar-17": -23393.0,
+            "31-Mar-16": -37278.0
+          },
+          "page_number": 1,
+          "source_text": "Share in current year's profits of associates (23,393) (37,278)"
+        },
+        {
+          "label": "(Increase) / decrease in investments (excluding investments in subsidiaries)",
+          "values": {
+            "31-Mar-17": -173257700.0,
+            "31-Mar-16": -391159616.0
+          },
+          "page_number": 1,
+          "source_text": "(Increase) / decrease in investments (excluding investments in subsidiaries) (173,257,700) (391,159,616)"
+        },
+        {
+          "label": "(Increase) / decrease in advances",
+          "values": {
+            "31-Mar-17": -1018904990.0,
+            "31-Mar-16": -1066012996.0
+          },
+          "page_number": 1,
+          "source_text": "(Increase) / decrease in advances (1,018,904,990) (1,066,012,996)"
+        },
+        {
+          "label": "Increase / (decrease) in deposits",
+          "values": {
+            "31-Mar-17": 972609590.0,
+            "31-Mar-16": 955896412.0
+          },
+          "page_number": 1,
+          "source_text": "Increase / (decrease) in deposits 972,609,590 955,896,412"
+        },
+        {
+          "label": "(Increase) / decrease in other assets",
+          "values": {
+            "31-Mar-17": -44855329.0,
+            "31-Mar-16": -38485747.0
+          },
+          "page_number": 1,
+          "source_text": "(Increase) / decrease in other assets (44,855,329) (38,485,747)"
+        },
+        {
+          "label": "Increase / (decrease) in other liabilities and provisions",
+          "values": {
+            "31-Mar-17": 228337692.0,
+            "31-Mar-16": 31324658.0
+          },
+          "page_number": 1,
+          "source_text": "Increase / (decrease) in other liabilities and provisions 228,337,692 31,324,658"
+        },
+        {
+          "label": "Direct taxes paid (net of refunds)",
+          "values": {
+            "31-Mar-17": -76847189.0,
+            "31-Mar-16": -70730944.0
+          },
+          "page_number": 1,
+          "source_text": "Direct taxes paid (net of refunds) (76,847,189) (70,730,944)"
+        },
+        {
+          "label": "Net cash flow (used in) / from operating activities",
+          "values": {
+            "31-Mar-17": 172815931.0,
+            "31-Mar-16": -344353663.0
+          },
+          "page_number": 1,
+          "source_text": "Net cash flow (used in) / from operating activities 172,815,931 (344,353,663)"
+        }
+      ],
+      "investing": [
+        {
+          "label": "Purchase of fixed assets",
+          "values": {
+            "31-Mar-17": -11577570.0,
+            "31-Mar-16": -8771635.0
+          },
+          "page_number": 1,
+          "source_text": "Purchase of fixed assets (11,577,570) (8,771,635)"
+        },
+        {
+          "label": "Proceeds from sale of fixed assets",
+          "values": {
+            "31-Mar-17": 100768.0,
+            "31-Mar-16": 116125.0
+          },
+          "page_number": 1,
+          "source_text": "Proceeds from sale of fixed assets 100,768 116,125"
+        },
+        {
+          "label": "Net cash used in investing activities",
+          "values": {
+            "31-Mar-17": -11476802.0,
+            "31-Mar-16": -8655510.0
+          },
+          "page_number": 1,
+          "source_text": "Net cash used in investing activities (11,476,802) (8,655,510)"
+        }
+      ],
+      "financing": [
+        {
+          "label": "Increase in minority interest",
+          "values": {
+            "31-Mar-17": 818605.0,
+            "31-Mar-16": 189954.0
+          },
+          "page_number": 2,
+          "source_text": "Increase in minority interest 818,605 189,954"
+        },
+        {
+          "label": "Money received on exercise of stock options by employees",
+          "values": {
+            "31-Mar-17": 22615161.0,
+            "31-Mar-16": 12229008.0
+          },
+          "page_number": 2,
+          "source_text": "Money received on exercise of stock options by employees 22,615,161 12,229,008"
+        },
+        {
+          "label": "Redemption of subordinated debt",
+          "values": {
+            "31-Mar-17": -19084500.0,
+            "31-Mar-16": -12020000.0
+          },
+          "page_number": 2,
+          "source_text": "Redemption of subordinated debt (19,084,500) (12,020,000)"
+        },
+        {
+          "label": "Dividend paid during the year",
+          "values": {
+            "31-Mar-17": -24083093.0,
+            "31-Mar-16": -20091666.0
+          },
+          "page_number": 2,
+          "source_text": "Dividend paid during the year (24,083,093) (20,091,666)"
+        },
+        {
+          "label": "Tax on dividend",
+          "values": {
+            "31-Mar-17": -5297258.0,
+            "31-Mar-16": -4237089.0
+          },
+          "page_number": 2,
+          "source_text": "Tax on dividend (5,297,258) (4,237,089)"
+        },
+        {
+          "label": "Net cash generated from financing activities",
+          "values": {
+            "31-Mar-17": -58929743.0,
+            "31-Mar-16": 378151341.0
+          },
+          "page_number": 2,
+          "source_text": "Net cash generated from financing activities (58,929,743) 378,151,341"
+        },
+        {
+          "label": "Effect of exchange fluctuation on translation reserve",
+          "values": {
+            "31-Mar-17": -282622.0,
+            "31-Mar-16": 282433.0
+          },
+          "page_number": 2,
+          "source_text": "Effect of exchange fluctuation on translation reserve (282,622) 282,433"
+        },
+        {
+          "label": "Cash and cash equivalents on amalgamation [Refer Schedule 18(1)]",
+          "values": {
+            "31-Mar-17": 295617.0,
+            "31-Mar-16": null
+          },
+          "page_number": 2,
+          "source_text": "Cash and cash equivalents on amalgamation [Refer Schedule 18(1)] 295,617 -"
+        },
+        {
+          "label": "Net increase / (decrease) in cash and cash equivalents",
+          "values": {
+            "31-Mar-17": 102422381.0,
+            "31-Mar-16": 25424601.0
+          },
+          "page_number": 2,
+          "source_text": "Net increase / (decrease) in cash and cash equivalents 102,422,381 25,424,601"
+        },
+        {
+          "label": "Cash and cash equivalents as at April 1st (Schedules and",
+          "values": {
+            "31-Mar-17": 390688815.0,
+            "31-Mar-16": 365264214.0
+          },
+          "page_number": 2,
+          "source_text": "Cash and cash equivalents as at April 1st (Schedules 6 and 7) 390,688,815 365,264,214"
+        },
+        {
+          "label": "Cash and cash equivalents as at March 31st (Schedules and",
+          "values": {
+            "31-Mar-17": 493111196.0,
+            "31-Mar-16": 390688815.0
+          },
+          "page_number": 2,
+          "source_text": "Cash and cash equivalents as at March 31st (Schedules 6 and 7) 493,111,196 390,688,815"
+        }
+      ]
+    }
+  },
+  "validation": {
+    "checks": [
+      {
+        "name": "net_change_in_cash_check[31-Mar-17]",
+        "formula": "Operating CF + Investing CF + Financing CF + FX/Translation Adjustment ≈ Net Increase in Cash & Cash Equivalents",
+        "operands": {
+          "operating_cash_flow": 172815931.0,
+          "investing_cash_flow": -11476802.0,
+          "financing_cash_flow": -58929743.0,
+          "fx_translation_adjustment": -282622.0
+        },
+        "calculated_value": 102126764.0,
+        "reported_value": 102422381.0,
+        "variance": -295617.0,
+        "status": "PASS",
+        "message": null
+      },
+      {
+        "name": "closing_cash_check[31-Mar-17]",
+        "formula": "Opening Cash + Net Increase in Cash + Cash Acquired on Amalgamation/Other Adjustments ≈ Closing Cash",
+        "operands": {
+          "opening_cash": 390688815.0,
+          "net_change_in_cash": 102422381.0,
+          "cash_on_amalgamation_adjustment": 295617.0
+        },
+        "calculated_value": 493406813.0,
+        "reported_value": 493111196.0,
+        "variance": 295617.0,
+        "status": "PASS",
+        "message": null
+      },
+      {
+        "name": "net_change_in_cash_check[31-Mar-16]",
+        "formula": "Operating CF + Investing CF + Financing CF + FX/Translation Adjustment ≈ Net Increase in Cash & Cash Equivalents",
+        "operands": {
+          "operating_cash_flow": -344353663.0,
+          "investing_cash_flow": -8655510.0,
+          "financing_cash_flow": 378151341.0,
+          "fx_translation_adjustment": 282433.0
+        },
+        "calculated_value": 25424601.0,
+        "reported_value": 25424601.0,
+        "variance": 0.0,
+        "status": "PASS",
+        "message": null
+      },
+      {
+        "name": "closing_cash_check[31-Mar-16]",
+        "formula": "Opening Cash + Net Increase in Cash + Cash Acquired on Amalgamation/Other Adjustments ≈ Closing Cash",
+        "operands": {
+          "opening_cash": 365264214.0,
+          "net_change_in_cash": 25424601.0,
+          "cash_on_amalgamation_adjustment": null
+        },
+        "calculated_value": 390688815.0,
+        "reported_value": 390688815.0,
+        "variance": 0.0,
+        "status": "PASS",
+        "message": null
+      }
+    ],
+    "overall_status": "PASS",
+    "issues": []
+  },
+  "processing_metadata": {
+    "ocr_used": true,
+    "ocr_engine": "tesseract",
+    "extraction_method": "rule_based_layout",
+    "llm_model": null,
+    "processed_at": "2026-09-11T11:54:51.129368Z",
+    "processing_time_ms": 4297,
+    "pages_processed": 2
+  }
+}

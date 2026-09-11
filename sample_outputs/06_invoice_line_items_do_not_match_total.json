@@ -1,0 +1,253 @@
+{
+  "document_name": "batch3-1495.jpg",
+  "document_type": "invoice",
+  "processing_status": "PASS",
+  "overall_confidence": null,
+  "file_validation": {
+    "file_type": "image/jpeg",
+    "is_supported": true,
+    "is_readable": true,
+    "page_count": 1,
+    "status": "PASS",
+    "reason": null
+  },
+  "extracted_data": {
+    "vendor_name": {
+      "value": "BEYOND DIGITAL IMAGING",
+      "page_number": 1,
+      "source_text": "BEYOND DIGITAL IMAGING"
+    },
+    "vendor_address": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "vendor_tax_id": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "customer_name": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "invoice_number": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "invoice_date": {
+      "value": "Oct. 13, 2023",
+      "page_number": 1,
+      "source_text": "Oct. 13, 2023 Sept. 5, 2023"
+    },
+    "invoice_time": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "currency": {
+      "value": "USD",
+      "page_number": null,
+      "source_text": null
+    },
+    "subtotal": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "tax_amount": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "tax_rate_percent": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "tax_inclusive": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "discount": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "total_amount": {
+      "value": 5257.0,
+      "page_number": 1,
+      "source_text": "Total:$5257"
+    },
+    "total_quantity": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "cash_paid": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "change": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "line_items": [
+      {
+        "description": "3M SJ3550 Dual Lock Fastener",
+        "quantity": 9.0,
+        "unit_price": 367.0,
+        "amount": 3303.0,
+        "page_number": 1,
+        "source_text": "5991 3M SJ3550 Dual Lock Fastener 9 $367 $367 $3303"
+      },
+      {
+        "description": "3M 369 Trans Polypro",
+        "quantity": 9.0,
+        "unit_price": 1.0,
+        "amount": 9.0,
+        "page_number": 1,
+        "source_text": "6015 3M 369 Trans Polypro 9 $1 $1 $9"
+      },
+      {
+        "description": "3M 4949 VHB Acryl. Foam",
+        "quantity": 1.0,
+        "unit_price": 110.0,
+        "amount": 110.0,
+        "page_number": 1,
+        "source_text": "6157 3M 4949 VHB Acryl. Foam Tape 1 $110 $110 $110"
+      },
+      {
+        "description": "3M 2242 Electrical Rubber",
+        "quantity": 6.0,
+        "unit_price": 4.0,
+        "amount": 24.0,
+        "page_number": 1,
+        "source_text": "5810 3M 2242 Electrical Rubber 6 $4 $4 $24"
+      },
+      {
+        "description": "3M 256 Printable Flatoback",
+        "quantity": 2.0,
+        "unit_price": 17.0,
+        "amount": 34.0,
+        "page_number": 1,
+        "source_text": "5862 3M 256 Printable Flatoback WH 2 $17 $17 $34"
+      }
+    ]
+  },
+  "validation": {
+    "checks": [
+      {
+        "name": "line_item_1_quantity_times_unit_price",
+        "formula": "quantity * unit_price ≈ line amount",
+        "operands": {
+          "quantity": 9.0,
+          "unit_price": 367.0
+        },
+        "calculated_value": 3303.0,
+        "reported_value": 3303.0,
+        "variance": 0.0,
+        "status": "PASS",
+        "message": null
+      },
+      {
+        "name": "line_item_2_quantity_times_unit_price",
+        "formula": "quantity * unit_price ≈ line amount",
+        "operands": {
+          "quantity": 9.0,
+          "unit_price": 1.0
+        },
+        "calculated_value": 9.0,
+        "reported_value": 9.0,
+        "variance": 0.0,
+        "status": "PASS",
+        "message": null
+      },
+      {
+        "name": "line_item_3_quantity_times_unit_price",
+        "formula": "quantity * unit_price ≈ line amount",
+        "operands": {
+          "quantity": 1.0,
+          "unit_price": 110.0
+        },
+        "calculated_value": 110.0,
+        "reported_value": 110.0,
+        "variance": 0.0,
+        "status": "PASS",
+        "message": null
+      },
+      {
+        "name": "line_item_4_quantity_times_unit_price",
+        "formula": "quantity * unit_price ≈ line amount",
+        "operands": {
+          "quantity": 6.0,
+          "unit_price": 4.0
+        },
+        "calculated_value": 24.0,
+        "reported_value": 24.0,
+        "variance": 0.0,
+        "status": "PASS",
+        "message": null
+      },
+      {
+        "name": "line_item_5_quantity_times_unit_price",
+        "formula": "quantity * unit_price ≈ line amount",
+        "operands": {
+          "quantity": 2.0,
+          "unit_price": 17.0
+        },
+        "calculated_value": 34.0,
+        "reported_value": 34.0,
+        "variance": 0.0,
+        "status": "PASS",
+        "message": null
+      },
+      {
+        "name": "line_items_sum_reconciliation",
+        "formula": "sum(line item amounts) ≈ total_amount",
+        "operands": {
+          "line_items_sum": 3480.0,
+          "subtotal": null,
+          "total_amount": 5257.0
+        },
+        "calculated_value": 3480.0,
+        "reported_value": 5257.0,
+        "variance": -1777.0,
+        "status": "FAIL",
+        "message": "Variance -1777.0 exceeds tolerance 52.57."
+      },
+      {
+        "name": "invoice_total_check",
+        "formula": "subtotal + tax_amount - discount ≈ total_amount",
+        "operands": {
+          "subtotal": null,
+          "tax_amount": null,
+          "discount": null
+        },
+        "calculated_value": null,
+        "reported_value": 5257.0,
+        "variance": null,
+        "status": "NOT_APPLICABLE",
+        "message": "No subtotal is printed on this document, so the total cannot be recomputed from its parts."
+      }
+    ],
+    "overall_status": "FAIL",
+    "issues": [
+      "line_items_sum_reconciliation: Variance -1777.0 exceeds tolerance 52.57."
+    ]
+  },
+  "processing_metadata": {
+    "ocr_used": true,
+    "ocr_engine": "tesseract",
+    "extraction_method": "rule_based_layout",
+    "llm_model": null,
+    "processed_at": "2026-09-11T11:55:40.016854Z",
+    "processing_time_ms": 788,
+    "pages_processed": 1
+  }
+}

@@ -1,1 +1,131 @@
-{"document_name":"batch2-0499.jpg","document_type":"invoice","processing_status":"PASS","overall_confidence":null,"file_validation":{"file_type":"image/jpeg","is_supported":true,"is_readable":true,"page_count":1,"status":"PASS","reason":null},"extracted_data":{"vendor_name":{"value":"TAYLOR CERTIFIED PROCESSING INC 101 B","page_number":1,"source_text":"TAYLOR CERTIFIED PROCESSING INC 101 B"},"vendor_address":{"value":"THE ORTHOTIC GROUP INC. 160 Markland Street Invoices apo@ohi.net MARKHAM, Ontario,","page_number":1,"source_text":"THE ORTHOTIC GROUP INC. 160 Markland Street Invoices apo@ohi.net MARKHAM, Ontario,"},"vendor_tax_id":{"value":null,"page_number":null,"source_text":null},"customer_name":{"value":null,"page_number":null,"source_text":null},"invoice_number":{"value":"6825","page_number":1,"source_text":"Invoice#: 6825"},"invoice_date":{"value":null,"page_number":null,"source_text":null},"invoice_time":{"value":null,"page_number":null,"source_text":null},"currency":{"value":"USD","page_number":null,"source_text":null},"subtotal":{"value":135.0,"page_number":1,"source_text":"Subtotal $135.00"},"tax_amount":{"value":null,"page_number":null,"source_text":null},"tax_rate_percent":{"value":8.0,"page_number":1,"source_text":"Sales Tax 8% $12.48"},"tax_inclusive":{"value":null,"page_number":null,"source_text":null},"discount":{"value":null,"page_number":null,"source_text":null},"total_amount":{"value":157.48,"page_number":1,"source_text":"Total Due $157.48"},"total_quantity":{"value":null,"page_number":null,"source_text":null},"cash_paid":{"value":null,"page_number":null,"source_text":null},"change":{"value":null,"page_number":null,"source_text":null},"line_items":[]},"validation":{"checks":[{"name":"invoice_total_check","formula":"subtotal + tax_amount - discount ≈ total_amount","operands":{"subtotal":135.0,"tax_amount":null,"discount":null},"calculated_value":null,"reported_value":157.48,"variance":null,"status":"NOT_APPLICABLE","message":"No subtotal is printed on this document, so the total cannot be recomputed from its parts."}],"overall_status":"NOT_APPLICABLE","issues":[]},"processing_metadata":{"ocr_used":true,"ocr_engine":"tesseract","extraction_method":"rule_based_layout","llm_model":null,"processed_at":"2026-09-10T17:10:48.583718Z","processing_time_ms":1212,"pages_processed":1}}
+{
+  "document_name": "X51006328913.jpg",
+  "document_type": "invoice",
+  "processing_status": "PASS",
+  "overall_confidence": null,
+  "file_validation": {
+    "file_type": "image/jpeg",
+    "is_supported": true,
+    "is_readable": true,
+    "page_count": 1,
+    "status": "PASS",
+    "reason": null
+  },
+  "extracted_data": {
+    "vendor_name": {
+      "value": "BEMED (SP) SDN. BHD.",
+      "page_number": 1,
+      "source_text": "BEMED (SP) SDN. BHD."
+    },
+    "vendor_address": {
+      "value": "No.49, Jalan Uae,",
+      "page_number": 1,
+      "source_text": "No.49, Jalan Uae,"
+    },
+    "vendor_tax_id": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "customer_name": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "invoice_number": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "invoice_date": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "invoice_time": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "currency": {
+      "value": "MYR",
+      "page_number": null,
+      "source_text": null
+    },
+    "subtotal": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "tax_amount": {
+      "value": 165.0,
+      "page_number": 1,
+      "source_text": "Tatal Inclusive GST: 165.00"
+    },
+    "tax_rate_percent": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "tax_inclusive": {
+      "value": true,
+      "page_number": null,
+      "source_text": null
+    },
+    "discount": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "total_amount": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "total_quantity": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "cash_paid": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "change": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "line_items": []
+  },
+  "validation": {
+    "checks": [
+      {
+        "name": "invoice_total_check",
+        "formula": "subtotal + tax_amount - discount ≈ total_amount",
+        "operands": {
+          "subtotal": null,
+          "tax_amount": 165.0,
+          "discount": null
+        },
+        "calculated_value": null,
+        "reported_value": null,
+        "variance": null,
+        "status": "NOT_APPLICABLE",
+        "message": "No subtotal is printed on this document, so the total cannot be recomputed from its parts."
+      }
+    ],
+    "overall_status": "NOT_APPLICABLE",
+    "issues": []
+  },
+  "processing_metadata": {
+    "ocr_used": true,
+    "ocr_engine": "tesseract",
+    "extraction_method": "rule_based_layout",
+    "llm_model": null,
+    "processed_at": "2026-09-11T11:55:30.663910Z",
+    "processing_time_ms": 437,
+    "pages_processed": 1
+  }
+}

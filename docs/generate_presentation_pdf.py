@@ -220,24 +220,29 @@ def slide_validation(c):
 
 
 def slide_results(c):
-    heading(c, "Measured results", "All 30 statements in the provided dataset (2017–2026), 200 checks")
-    rows = [("Balance sheet", 44, 1, 15), ("Profit & loss", 72, 6, 22), ("Cash flow", 32, 0, 8)]
-    max_value = 72
-    base_y, chart_h, bar_w = 150, 210, 34
+    heading(c, "Measured results", "All 50 documents in the provided dataset, 297 checks")
+    rows = [
+        ("Balance sheet", 45, 0, 15),
+        ("Profit & loss", 76, 0, 24),
+        ("Cash flow", 32, 0, 8),
+        ("Invoice", 27, 2, 20),
+    ]
+    max_value = 76
+    base_y, chart_h, bar_w = 150, 210, 26
     c.setFillColor(MUTED)
     c.setFont(SANS, 9)
     for i, (label, p, f, n) in enumerate(rows):
-        gx = 90 + i * 175
+        gx = 84 + i * 128
         for j, (value, colour) in enumerate(((p, PASS), (f, FAIL), (n, NA))):
             h = (value / max_value) * chart_h
             c.setFillColor(colour)
-            c.rect(gx + j * (bar_w + 8), base_y, bar_w, max(h, 1), stroke=0, fill=1)
+            c.rect(gx + j * (bar_w + 6), base_y, bar_w, max(h, 1), stroke=0, fill=1)
             c.setFillColor(INK)
             c.setFont(SANS_BOLD, 9)
-            c.drawCentredString(gx + j * (bar_w + 8) + bar_w / 2, base_y + max(h, 1) + 5, str(value))
+            c.drawCentredString(gx + j * (bar_w + 6) + bar_w / 2, base_y + max(h, 1) + 5, str(value))
         c.setFillColor(MUTED)
         c.setFont(SANS, 10)
-        c.drawCentredString(gx + 61, base_y - 16, label)
+        c.drawCentredString(gx + 45, base_y - 16, label)
     c.setStrokeColor(BORDER)
     c.line(70, base_y, 560, base_y)
     for j, (name, colour) in enumerate((("PASS", PASS), ("FAIL", FAIL), ("NOT_APPLICABLE", NA))):
@@ -247,7 +252,11 @@ def slide_results(c):
         c.setFont(SANS, 9)
         c.drawString(106 + j * 130, 108, name)
 
-    stats = [("148", "checks reconcile exactly", PASS), ("7", "flagged as discrepancies", FAIL), ("45", "not applicable — unreadable scans", NA)]
+    stats = [
+        ("228", "checks reconcile exactly", PASS),
+        ("2", "genuine discrepancies, verified by hand", FAIL),
+        ("67", "not applicable — nothing to reconcile", NA),
+    ]
     for i, (n, label, colour) in enumerate(stats):
         y = 340 - i * 84
         card(c, 606, y, 306, 70, WHITE)

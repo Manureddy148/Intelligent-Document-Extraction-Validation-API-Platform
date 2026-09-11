@@ -334,3 +334,137 @@ def test_tax_exclusive_and_inclusive_totals_are_told_apart():
 def test_comma_thousands_separator_is_not_read_as_a_decimal():
     ctx = parse_invoice([(1, "Total 1,720.00")])
     assert ctx.total_amount == 1720.00
+
+
+def test_invoice_table_row_with_item_number_and_currency():
+    """A real invoice table row: item no, description, qty, rate, cost, amount."""
+    ctx = parse_invoice([
+        (1, "ITEM DESCRIPTION QTY PRICE AMOUNT"),
+        (1, "5991 3M SJ3550 Dual Lock Fastener 9 $367 $367 $3303"),
+        (1, "Total $3303"),
+    ])
+    item = ctx.line_items[0]
+    assert (item.description, item.quantity, item.unit_price, item.amount) == (
+        "3M SJ3550 Dual Lock Fastener", 9.0, 367.0, 3303.0
+    )
+
+
+def test_letterhead_outside_the_item_table_is_not_a_line_item():
+    """Without a table region, "Tel. 416 431 0440" became a 416-quantity item."""
+    ctx = parse_invoice([
+        (1, "A.E. Blake Sales Ltd. Tel. 416 431 0440"),
+        (1, "Invoice NO: 138236"),
+    ])
+    assert ctx.line_items == []
+
+
+def test_unit_column_between_price_and_amount_is_skipped():
+    """"24 $23.50 KIT $564.00" - the U/M column sits between price and amount."""
+    ctx = parse_invoice([
+        (1, "# ITEM DESCRIPTION QTY PRICE U/M AMOUNT"),
+        (1, "30 100237 BC 27767 24 $23.50 KIT $564.00"),
+        (1, "S. Total: $ 564.00"),
+    ])
+    item = ctx.line_items[0]
+    assert (item.quantity, item.unit_price, item.amount) == (24.0, 23.50, 564.00)
+
+
+def test_unreadable_table_row_marks_the_item_list_incomplete():
+    """A partial item list must not be reported as a reconciliation failure."""
+    ctx = parse_invoice([
+        (1, "ITEM DESCRIPTION QTY PRICE AMOUNT"),
+        (1, "Widget 2 5.00 10.00"),
+        (1, "99.99"),
+        (1, "Total 110.00"),
+    ])
+    assert ctx.line_items_incomplete is True
+
+
+def test_currency_amounts_without_decimals_are_read():
+    assert parse_invoice([(1, "Total: $5257")]).total_amount == 5257.0
+    assert parse_invoice([(1, "Total RM 50")]).total_amount == 50.0
+
+
+def test_month_name_invoice_dates_are_read():
+    assert parse_invoice([(1, "Invoice date Oct. 13, 2023")]).invoice_date == "Oct. 13, 2023"
+    assert parse_invoice([(1, "Dated 13 March 2024")]).invoice_date == "13 March 2024"
+
+
+def test_column_header_and_total_rows_are_not_line_items():
+    ctx = parse_invoice([
+        (1, "No. Description Quantity Rate Cost Amount"),
+        (1, "Total 3 items 45.00 90.00"),
+    ])
+    assert ctx.line_items == []
+
+
+def test_line_item_sum_is_not_compared_against_a_tax_inclusive_total():
+    """Items sum to the net amount; a tax-inclusive total legitimately differs."""
+    from app.utils.invoice_parsing import InvoiceLineItem
+
+    ctx = InvoiceContext(
+        total_amount=30.30, tax_amount=1.72, tax_inclusive=True,
+        line_items=[InvoiceLineItem("Tea", 1, 28.58, 28.58)],
+    )
+    outcome = ExtractionOutcome({}, ["current"], True, 1, invoice_context=ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+    check = next(c for c in result.checks if c.name == "line_items_sum_reconciliation")
+    assert check.status == ValidationStatus.NOT_APPLICABLE
+
+
+def test_line_item_sum_reconciles_against_a_printed_subtotal():
+    from app.utils.invoice_parsing import InvoiceLineItem
+
+    ctx = InvoiceContext(
+        subtotal=28.58, total_amount=30.30, tax_amount=1.72,
+        line_items=[InvoiceLineItem("Tea", 1, 28.58, 28.58)],
+    )
+    outcome = ExtractionOutcome({}, ["current"], True, 1, invoice_context=ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+    check = next(c for c in result.checks if c.name == "line_items_sum_reconciliation")
+    assert check.status == ValidationStatus.PASS
+
+
+def test_gst_included_in_total_line_is_tax_not_the_total():
+    """"GST @6% included in total RM 0.35" replaced a RM 6.20 bill with RM 0.35."""
+    ctx = parse_invoice([
+        (1, "Total Incl. GST&6% RM 6.20"),
+        (1, "CASH RM 100.00"),
+        (1, "CHANGE RM 93.80"),
+        (1, "GST @6% included in total RM 0.35"),
+    ])
+    assert ctx.total_amount == 6.20
+    assert ctx.tax_amount == 0.35
+    assert ctx.tax_inclusive is True
+
+
+def test_two_digit_comma_group_is_a_decimal_point():
+    """OCR reads "554.55" as "554,55"; as a thousands separator it becomes 55455."""
+    assert parse_number("554,55") == 554.55
+    assert parse_number("2,530,432.44") == 2530432.44
+    assert parse_number("1,234,567") == 1234567.0
+
+
+def test_minority_interest_is_not_read_off_the_profit_row():
+    section = StatementSection(name="profit")
+    section.items = [
+        StatementLineItem(
+            "Consolidated Net Profit for the year before Minority Interest",
+            "profit__before", {"2026": 79219.46}, 1, "row",
+        ),
+        StatementLineItem("Less : Minority Interest", "profit__mi", {"2026": 3193.49}, 1, "row"),
+    ]
+    assert section.find("minority interest").values["2026"] == 79219.46
+    assert section.find("minority interest", exclude=("before minority interest",)).values["2026"] == 3193.49
+
+
+def test_canadian_invoice_subtotal_and_hst_are_read():
+    """"S. Total" and "13% HST" are the subtotal and tax; both were being missed."""
+    ctx = parse_invoice([
+        (1, "AEB Reference Quote# 50001502-6980 EXPEDITED S. Total: $ 1,128.00"),
+        (1, "13% HST: $ 146.64"),
+        (1, "Your contact: DRAKE Total: $ 1,274.64"),
+    ])
+    assert (ctx.subtotal, ctx.tax_amount, ctx.tax_rate_percent, ctx.total_amount) == (
+        1128.00, 146.64, 13.0, 1274.64
+    )
