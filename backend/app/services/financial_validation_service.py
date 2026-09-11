@@ -128,7 +128,9 @@ class FinancialValidationService:
                     name=f"line_item_{index}_quantity_times_unit_price",
                     formula="quantity * unit_price ≈ line amount",
                     operands={"quantity": item.quantity, "unit_price": item.unit_price},
-                    calculated=round(item.quantity * item.unit_price, 2),
+                    calculated=round(item.quantity * item.unit_price, 2)
+                    if item.quantity is not None and item.unit_price is not None
+                    else None,
                     reported=item.amount,
                 )
             )

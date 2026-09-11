@@ -291,6 +291,18 @@ every value the pages interpolate is HTML-escaped, and a file named
 have no text layer (all of the provided statements). No paid OCR service is
 used, so there is no key to configure and no quota to exhaust.
 
+**Pages that were photographed sideways.** A rotated scan is the one failure
+Tesseract does not announce: it returns confident-looking nonsense
+(`09°0 9£°€ZS Ore 18301 unduly`) rather than an error, and counting letters
+cannot tell that apart from text. So page quality is scored as readable words ×
+mean OCR confidence, and a page that scores poorly is re-read at other
+orientations, keeping one only if it measurably reads better. Tesseract's own
+orientation detection is used as a hint rather than an answer — it reports low
+confidence (7.6 of 100) on exactly these pages. One dataset invoice goes from 33
+rows of mirrored nonsense to 71 readable rows this way. Orientation is decided
+on a downscaled copy, so the probe is cheap and a page that reads well the first
+time never enters this path.
+
 **Why the extractor is layout-aware.** Reading OCR output line by line loses the
 table structure, and two failure modes follow directly from that:
 
@@ -388,7 +400,7 @@ use the managed database so processed results survive a restart.
 ## Testing
 
 ```bash
-cd backend && pytest            # 62 tests
+cd backend && pytest            # 73 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size
@@ -418,12 +430,14 @@ document genuinely add up, so this doubles as an extraction-accuracy measure.
 | Balance sheet | 10 | 45 | 0 | 15 |
 | Profit & loss | 10 | 76 | 0 | 24 |
 | Cash flow | 10 | 32 | 0 | 8 |
-| Invoice | 20 | 27 | 2 | 20 |
-| **Total** | **50** | **228** | **2** | **67** |
+| Invoice | 20 | 29 | 2 | 25 |
+| **Total** | **50** | **230** | **2** | **72** |
 
 All 50 returned HTTP 200 with no crash; 48 finished `processing_status: PASS`
 and 2 (the 2022 statements) `FAILED` because their scans are too poor to yield
-any key field. Median processing time 2.1 s, maximum 5.1 s.
+any key field. Median processing time 2.1 s; the slowest is 11.8 s, a
+12-megapixel photograph that has to be read twice because it was taken sideways
+(see [known limitations](#known-limitations)).
 
 Every statement check now reconciles. The `NOT_APPLICABLE` results concentrate
 in the 2020–2022 statement scans, where OCR cannot recover the row labels, and
@@ -456,7 +470,9 @@ than by assumption:
 | Two-row receipt line items, tax-exclusive/inclusive totals, comma decimals | 209 / 10 / 64 across all 50 documents |
 | Line-item sums compared to the subtotal, not a tax-inclusive total | 217 / 16 / 65 |
 | Keyword exclusions (`net profit *before* minority interest`), amalgamation operand, two-digit comma decimals | 226 / 3 / 68 |
-| Invoice rows read only inside the item table, columns resolved by arithmetic | **228 / 2 / 67** across all 50 documents |
+| Invoice rows read only inside the item table, columns resolved by arithmetic | 228 / 2 / 67 across all 50 documents |
+| Re-read a page at another orientation when it reads badly | 230 / 2 / 70 — one invoice went from unreadable to 71 rows |
+| Unresolvable item columns report no quantity instead of a wide "discrepancy" | **230 / 2 / 72** across all 50 documents |
 | 300 DPI instead of 200 | 215 / 9 / 73 — *rejected*, re-measured against the final extractor |
 | Second colour OCR pass unioned with the first | 149 / 7 / 44 for 2× the latency — *rejected* |
 
@@ -472,16 +488,31 @@ than by assumption:
   follow Indian bank statement conventions.
   Other layouts still get every labelled row via `line_items`, but the named
   fields and the per-type checks may come back `NOT_APPLICABLE`.
-- **Receipt-style invoices extract fewer fields.** The SROIE images are noisy;
-  line items are only captured when a row cleanly matches the
-  description/qty/price/amount shape. A vendor name is only accepted from the
-  top of the document and only when it reads like words, so an unreadable
-  header returns `null` rather than a scrap of OCR noise.
+- **Receipt-style invoices extract fewer fields.** The SROIE images are noisy.
+  Across the 20 invoices the extractor finds a vendor name on 19, a date on 15,
+  a total on 15, an invoice number on 10, line items on 9 and a customer name on
+  5 — most of these receipts simply do not print a buyer, a subtotal or a
+  discount. A vendor name is only accepted from the top of the document and only
+  when it reads like words, so an unreadable header returns `null` rather than a
+  scrap of OCR noise.
+- **An unreadable item column reports no quantity.** Invoices order their list
+  price, net rate, discount and unit-of-measure columns differently. Where
+  quantity × rate lands near the printed amount the row is reported in full and
+  a near miss is flagged as a discrepancy; where it does not, the description and
+  amount are kept and the quantity and rate come back `null`, because choosing
+  between the columns would be inventing a value.
 - **Period labels degrade to `period_1`/`period_2`** when the header is too
   damaged to read a date (2024 balance sheet OCRs as `March a1,`). Values are
   still assigned to the correct columns.
 - **A misread digit surfaces as a validation FAIL.** That is the check doing its
   job, but it means a FAIL is not proof the source document is wrong.
+- **A sideways page costs an extra read.** When a page reads badly the image is
+  re-read at another orientation, which recovered one invoice in the dataset
+  completely (33 rows of mirrored nonsense became 71 readable rows). Orientation
+  is chosen on a downscaled copy so the probe is cheap, but the winning
+  orientation still needs a second full-resolution pass: that document takes
+  11.8 s against a 2.1 s median. Pages that read well the first time never enter
+  this path and are not slowed at all.
 - **Processing is synchronous**, roughly 2–6 s per scanned page, dominated by
   Tesseract. Free-tier instances are slower still and cold-start.
 - **No authentication.** The API is open, as the case study scope allows.

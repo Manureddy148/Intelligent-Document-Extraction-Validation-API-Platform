@@ -92,7 +92,7 @@ class ExtractionService:
         lines_with_pages = [(row.page_number, row.text) for row in rows if row.text.strip()]
 
         if document_type == DocumentType.INVOICE:
-            return self._extract_invoice(lines_with_pages, ocr_used, len(pages))
+            return self._extract_invoice(lines_with_pages, ocr_used, len(pages), rows)
 
         periods, global_anchors = detect_period_columns(rows)
         page_anchors: dict[int, list[float]] = {}
@@ -110,8 +110,8 @@ class ExtractionService:
 
     # ---- Invoice ----------------------------------------------------------
 
-    def _extract_invoice(self, lines_with_pages, ocr_used: bool, pages_processed: int) -> ExtractionOutcome:
-        ctx = parse_invoice(lines_with_pages)
+    def _extract_invoice(self, lines_with_pages, ocr_used: bool, pages_processed: int, rows=None) -> ExtractionOutcome:
+        ctx = parse_invoice(lines_with_pages, rows)
 
         def ev(key: str) -> tuple[int | None, str | None]:
             return ctx.evidence.get(key, (None, None))

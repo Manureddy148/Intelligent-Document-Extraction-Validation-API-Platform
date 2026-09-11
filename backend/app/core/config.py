@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # does not matter. Mode 6 preserves reading order but drops bold totals.
     ocr_psm: int = 3
     ocr_min_confidence: int = 30
+    # Below this mean word confidence a page is treated as possibly sideways and
+    # re-read at other orientations (kept only if it measurably reads better).
+    # Upright scans in the dataset score 75-90; a rotated one scored 58.
+    ocr_min_mean_confidence: float = 70.0
+    # Longest edge, in pixels, of the downscaled copy used to choose a rotation.
+    ocr_orientation_probe_px: int = 800
     tesseract_cmd: str | None = None
 
     financial_tolerance_absolute: float = 1.0

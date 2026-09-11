@@ -468,3 +468,110 @@ def test_canadian_invoice_subtotal_and_hst_are_read():
     assert (ctx.subtotal, ctx.tax_amount, ctx.tax_rate_percent, ctx.total_amount) == (
         1128.00, 146.64, 13.0, 1274.64
     )
+
+
+def test_rotated_page_is_re_read_at_the_orientation_that_reads_better():
+    """A sideways photo yields confident nonsense; it must be re-read rotated."""
+    from PIL import Image, ImageDraw
+
+    from app.core.config import Settings
+    from app.services.ocr_service import OcrService
+
+    upright = Image.new("L", (1000, 600), color=255)
+    draw = ImageDraw.Draw(upright)
+    for i, line in enumerate(["TAX INVOICE", "VENDOR NAME LIMITED", "TOTAL AMOUNT DUE"]):
+        draw.text((40, 60 + i * 90), line, fill=0)
+    sideways = upright.rotate(90, expand=True)
+
+    page = OcrService(Settings())._ocr_image(sideways, page_number=1)
+    assert "INVOICE" in page.text.upper()
+
+
+def test_upright_page_is_not_rotated():
+    """The retry must not fire on a page that already read well."""
+    from PIL import Image, ImageDraw
+
+    from app.core.config import Settings
+    from app.services.ocr_service import OcrService
+
+    image = Image.new("L", (1000, 600), color=255)
+    draw = ImageDraw.Draw(image)
+    for i, line in enumerate(["TAX INVOICE", "VENDOR NAME LIMITED", "TOTAL AMOUNT DUE"]):
+        draw.text((40, 60 + i * 90), line, fill=0)
+
+    page = OcrService(Settings())._ocr_image(image, page_number=1)
+    assert "INVOICE" in page.text.upper()
+
+
+def test_customer_name_is_read_from_its_own_column():
+    """"Sold To"/"Ship To" sit side by side; the buyer is under the left label."""
+    ctx = parse_invoice([
+        (1, "Vendu 4 - Sold To Livre a - Ship To"),
+        (1, "Oz Optics Ltd."),
+        (1, "Total 10.00"),
+    ])
+    assert ctx.customer_name == "Oz Optics Ltd."
+
+
+def test_customer_account_header_is_not_a_customer_name():
+    ctx = parse_invoice([
+        (1, "CUSTOMER ACCOUNT CUSTOMER PO ORDER DATE"),
+        (1, "10102028 292539 Jun 24 2021"),
+    ])
+    assert ctx.customer_name is None
+
+
+def test_ocr_misread_quantity_prefix_still_yields_a_line_item():
+    """OCR reads the "1" of "1x" as a letter; the item was being lost entirely."""
+    ctx = parse_invoice([(1, "HASSIHO FINE WHOLEMEAL 420G"), (1, "ix 2.64 2.44 Z")])
+    item = ctx.line_items[0]
+    assert (item.quantity, item.unit_price, item.amount) == (1.0, 2.64, 2.44)
+
+
+def test_quantity_row_below_a_description_that_carries_the_amount():
+    """"973 COKE LIGHT RM4.40" / "#2 X RM 2,20" - amount above, quantity below."""
+    ctx = parse_invoice([(1, "973 COKE LIGHT 500ML RM4.40"), (1, "#2 X RM 2,20")])
+    item = ctx.line_items[0]
+    assert (item.quantity, item.unit_price, item.amount) == (2.0, 2.20, 4.40)
+
+
+def test_unresolvable_columns_keep_the_amount_but_report_no_quantity():
+    """356.88 is printed plainly; which figure is the rate is not recoverable."""
+    from app.utils.invoice_parsing import _parse_table_line_item
+
+    parsed = _parse_table_line_item("6SPARKLE 200.GM BATI 48PCS. 24054000/24 PCS| 17.55 14.87 PCS 356.88")
+    description, quantity, unit_price, amount = parsed
+    assert amount == 356.88
+    assert quantity is None and unit_price is None
+    assert "SPARKLE" in description
+
+
+def test_a_near_miss_is_still_reported_as_a_discrepancy():
+    """Suppressing wide misses must not suppress genuine arithmetic errors."""
+    from app.utils.invoice_parsing import _parse_table_line_item
+
+    _, quantity, unit_price, amount = _parse_table_line_item("WIDGET 2 5.00 10.50")
+    assert (quantity, unit_price, amount) == (2.0, 5.0, 10.5)
+
+
+def test_line_item_check_is_not_applicable_without_a_quantity():
+    from app.utils.invoice_parsing import InvoiceLineItem
+
+    ctx = InvoiceContext()
+    ctx.line_items = [InvoiceLineItem("Item", None, None, 356.88, 1, "row")]
+    outcome = ExtractionOutcome({}, [], True, 1, {}, ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+    check = next(c for c in result.checks if c.name == "line_item_1_quantity_times_unit_price")
+    assert check.status == ValidationStatus.NOT_APPLICABLE
+
+
+def test_invoice_number_survives_ocr_colon_and_intervening_words():
+    """"NO s 18291" is "NO: 18291"; "Invoice - Facture NO:" separates the words."""
+    assert parse_invoice([(1, "INVOICE NO s 18291/102/70163")]).invoice_number == "18291/102/70163"
+    assert parse_invoice([(1, "Invoice - Facture NO: 138236")]).invoice_number == "138236"
+
+
+def test_tax_registration_and_item_counts_are_not_invoice_numbers():
+    """The loose form only applies to a line that names an invoice."""
+    assert parse_invoice([(1, "GST ID. NO s 000191747712")]).invoice_number is None
+    assert parse_invoice([(1, "No of items: 2")]).invoice_number is None

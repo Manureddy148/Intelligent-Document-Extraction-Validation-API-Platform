@@ -42,6 +42,14 @@ _INVOICE_NO_RE = re.compile(
     re.IGNORECASE,
 )
 _HAS_DIGIT_RE = re.compile(r"\d")
+# The document keyword and the "No." marker are often separated by other words
+# ("Invoice - Facture NO: 138236"), and OCR reads the colon as a letter
+# ("INVOICE NO s 18291/102/70163"). Matched only on a line that names an
+# invoice, so "No of items: 2" and "GST Reg. No." are not mistaken for one.
+_INVOICE_KEYWORD_RE = re.compile(r"\b(?:invoice|facture|receipt|bill|tax\s+invoice)\b", re.IGNORECASE)
+_INVOICE_NO_LOOSE_RE = re.compile(
+    r"\b(?:no|num|number|#)\b\.?\s*[:;=+*\-\.s]?\s*([A-Z0-9][A-Z0-9\-/]{3,})", re.IGNORECASE
+)
 _TOTAL_QTY_RE = re.compile(r"total\s*(?:qty|quantity)\s*[:\-]?\s*(\d+(?:[.,]\d+)?)", re.IGNORECASE)
 # Receipt headings and OCR noise are not vendor names. A short scrap like
 # "cudd" reads as a real value in the output, which is worse than reporting
@@ -70,9 +78,21 @@ _LINE_ITEM_LEADING_QTY_RE = re.compile(
 _VENDOR_NAME_SEARCH_ROWS = 6
 
 # "1x 12.50 12.50 SR" - quantity, unit price, line amount, tax code.
+# OCR routinely reads the leading "1" of "1x" as a letter ("tx", "ix", "lx",
+# "|x"), which lost the line item on several receipts in the dataset; those
+# forms are read as a quantity of one.
+_ONE_CONFUSIONS = r"[1lI|ti!]"
 _QTY_X_PRICE_RE = re.compile(
-    r"^(?P<qty>\d+(?:\.\d+)?)\s*[xX]\s*(?P<unit_price>\d[\d,]*[.,]\d{2})\s+"
-    r"(?P<amount>\d[\d,]*[.,]\d{2})\s*[A-Za-z]{0,3}$"
+    rf"^(?:(?P<qty>\d+(?:\.\d+)?)|{_ONE_CONFUSIONS})\s*[xX]\s*"
+    r"(?P<unit_price>\d[\d,]*[.,]\d{2})"
+    r"(?:\s+(?P<amount>\d[\d,]*[.,]\d{2}))?\s*[A-Za-z]{0,3}$"
+)
+# "#2 X RM 2,20" - quantity and unit price under a description that already
+# carried the line amount.
+_HASH_QTY_X_PRICE_RE = re.compile(
+    rf"^[#*]?\s*(?:(?P<qty>\d+(?:\.\d+)?)|{_ONE_CONFUSIONS})\s*[xX]\s*"
+    rf"(?:{_CURRENCY})?\s*(?P<unit_price>\d[\d,]*[.,]\d{{2}})\s*$",
+    re.IGNORECASE,
 )
 _NUMBER_TOKEN_RE = re.compile(rf"(?:{_CURRENCY}\s*)?-?[\d,]+(?:[.,]\d{{2}})?", re.IGNORECASE)
 _CURRENCY_ONLY_RE = re.compile(rf"^{_CURRENCY}$", re.IGNORECASE)
@@ -101,20 +121,22 @@ def _coheres(quantity: float, unit_price: float, amount: float) -> bool:
 
 
 def _plausible_columns(quantity: float, unit_price: float, amount: float) -> bool:
-    """Is quantity * unit_price even the same size as the printed amount?
+    """Is quantity * unit_price close enough to the printed amount to report on?
 
     A genuine arithmetic error on an invoice is small - a rounding difference, a
-    mistyped digit. Being out by an order of magnitude means the columns were
-    read wrong, not that the document disagrees with itself, so such a row is
-    dropped rather than reported as a discrepancy the document does not contain.
+    mistyped digit - and is worth flagging. A wide miss means a column was read
+    wrong instead: invoices print list price, net rate, discount and unit-of-
+    measure columns in varying orders, and picking the wrong one is a failure of
+    this parser, not a discrepancy in the document. Those rows keep their
+    description and amount and report no quantity rather than a false finding.
     """
     product = quantity * unit_price
     if product <= 0 or amount <= 0:
         return False
-    return 0.1 <= product / amount <= 10
+    return 0.8 <= product / amount <= 1.25
 
 
-def _resolve_columns(numbers: list[float]) -> tuple[float, float, float] | None:
+def _resolve_columns(numbers: list[float]) -> tuple[float | None, float | None, float] | None:
     """Pick (quantity, unit_price, amount) out of a row's trailing numbers.
 
     The printed amount is the rightmost number. Quantity and unit price are
@@ -136,13 +158,13 @@ def _resolve_columns(numbers: list[float]) -> tuple[float, float, float] | None:
         if pair[0] > 0 and _coheres(*pair):
             return pair
 
-    # Nothing multiplies out. Keep the natural reading only if it is at least
-    # the right order of magnitude - that is a discrepancy worth reporting;
-    # anything wider is a misread table.
-    return natural if _plausible_columns(*natural) else None
+    # Nothing multiplies out. Keep the natural reading only if it is a near
+    # miss - that is a discrepancy worth reporting; anything wider means the
+    # columns were misread, so the quantity and rate are left unknown.
+    return natural if _plausible_columns(*natural) else (None, None, amount)
 
 
-def _parse_table_line_item(line: str) -> tuple[str, float, float, float] | None:
+def _parse_table_line_item(line: str) -> tuple[str, float | None, float | None, float] | None:
     """Read an invoice table row: [item no] description qty unit_price [cost] amount.
 
     Written against the row rather than as one regex because invoice tables vary
@@ -179,12 +201,13 @@ def _parse_table_line_item(line: str) -> tuple[str, float, float, float] | None:
     if resolved is None:
         return None
     quantity, unit_price, amount = resolved
-    if quantity <= 0 or amount <= 0:
+    if amount <= 0 or (quantity is not None and quantity <= 0):
         return None
 
     # A row whose description is an item code rather than words is still a real
     # line - but only trust it when the numbers multiply out.
-    if len(re.sub(r"[^A-Za-z]", "", description)) < 3 and not _coheres(quantity, unit_price, amount):
+    coherent = None not in (quantity, unit_price) and _coheres(quantity, unit_price, amount)
+    if len(re.sub(r"[^A-Za-z]", "", description)) < 3 and not coherent:
         return None
     if not description:
         return None
@@ -213,8 +236,11 @@ def _last_money(line: str) -> float | None:
 @dataclass
 class InvoiceLineItem:
     description: str
-    quantity: float
-    unit_price: float
+    # Null when the row's columns could not be resolved: the amount is printed
+    # plainly, but which figure is the quantity and which the rate is not always
+    # recoverable from a scan. A guess there would be an invented value.
+    quantity: float | None
+    unit_price: float | None
     amount: float
     page_number: int | None = None
     source_text: str | None = None
@@ -277,7 +303,101 @@ def _item_table_region(lines: list[str]) -> tuple[int, int] | None:
     return None
 
 
-def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
+# The party the invoice is addressed to. "Ship To"/"Deliver To" name a delivery
+# address rather than the buyer, so they are only used when nothing better is
+# found.
+_CUSTOMER_LABEL_RE = re.compile(
+    r"\b(?:sold\s*to|bill(?:ed)?\s*to|invoice\s*to|customer|client|buyer|vendu)\b", re.IGNORECASE
+)
+_FALLBACK_CUSTOMER_LABEL_RE = re.compile(r"\b(?:ship\s*to|deliver(?:ed)?\s*to|livr)\b", re.IGNORECASE)
+# Labels that mark the *seller* column, used to bound the customer's column.
+_SELLER_LABEL_RE = re.compile(r"\b(?:seller|vendor|from|supplier|remit\s*to)\b", re.IGNORECASE)
+# Column headers inside a details grid ("CUSTOMER ACCOUNT", "CUSTOMER PO") name
+# a field, not the buyer.
+_CUSTOMER_FIELD_HEADER_RE = re.compile(
+    r"\b(?:account|a/?c|po\b|p\.o\.|order|number|no\.?|ref|id|code|copy|service|care)\b", re.IGNORECASE
+)
+
+
+def _looks_like_a_party_name(line: str) -> bool:
+    """Enough letters, and not a date, an amount, or a bare address line."""
+    letters = re.sub(r"[^A-Za-z]", "", line)
+    if len(letters) < 4:
+        return False
+    if _DATE_RE.search(line) or _MONEY_RE.search(line):
+        return False
+    if _ADDRESS_HINT_RE.search(line):
+        return False
+    # Mostly-digit lines are account numbers, not names.
+    return len(letters) / max(len(re.sub(r"\s", "", line)), 1) >= 0.6
+
+
+def _band_text(row, x_from: float, x_to: float) -> str:
+    """Words of a row whose left edge falls inside one horizontal column band."""
+    return " ".join(w.text for w in row.words if x_from - 1 <= w.x0 < x_to).strip()
+
+
+def _find_customer_name(lines: list[str], rows: list | None) -> tuple[str, int] | None:
+    """The buyer's name, read from whichever column its label sits above.
+
+    Invoices print "Seller:" and "Client:" side by side, which OCR flattens into
+    one line ("Cruz PLC Sandoval-Phillips"). Splitting that by text alone is
+    guesswork, so where word geometry is available the name is taken from the
+    horizontal band under the customer label; without geometry only a
+    single-label row is trusted.
+    """
+    for pattern in (_CUSTOMER_LABEL_RE, _FALLBACK_CUSTOMER_LABEL_RE):
+        for index, line in enumerate(lines[:25]):
+            found = list(pattern.finditer(line))
+            if not found:
+                continue
+            # Take the rightmost label: "Vendu 4 - Sold To" is one label phrase,
+            # and slicing after the first match would return "4 - Sold To".
+            match = found[-1]
+
+            # "Bill To: ACME Corp" - the name is on the label line itself.
+            inline = line[match.end():].lstrip(" :\t-")
+            if (
+                _looks_like_a_party_name(inline)
+                and not _CUSTOMER_FIELD_HEADER_RE.search(inline[:24])
+                and not _CUSTOMER_LABEL_RE.search(inline)
+                and not _FALLBACK_CUSTOMER_LABEL_RE.search(inline)
+                and not _SELLER_LABEL_RE.search(inline)
+            ):
+                return inline.strip(), index
+
+            # Otherwise the name is on the row below, in the label's column.
+            if index + 1 >= len(lines):
+                continue
+            below = lines[index + 1]
+            row = rows[index] if rows and index < len(rows) else None
+            row_below = rows[index + 1] if rows and index + 1 < len(rows) else None
+
+            candidate = below
+            if row is not None and row_below is not None:
+                label_word = next(
+                    (w for w in row.words if pattern.search(w.text)),
+                    None,
+                )
+                if label_word is not None:
+                    # The customer column runs from its label to the next label
+                    # to its right, whatever that label is.
+                    later = [
+                        w.x0
+                        for w in row.words
+                        if w.x0 > label_word.x0 + 1
+                        and (pattern.search(w.text) or _SELLER_LABEL_RE.search(w.text)
+                             or _FALLBACK_CUSTOMER_LABEL_RE.search(w.text))
+                    ]
+                    start = min((w.x0 for w in row.words if abs(w.x0 - label_word.x0) < 1), default=label_word.x0)
+                    candidate = _band_text(row_below, start, min(later) if later else float("inf")) or below
+
+            if _looks_like_a_party_name(candidate):
+                return candidate.strip(), index + 1
+    return None
+
+
+def parse_invoice(lines_with_pages: list[tuple[int, str]], rows: list | None = None) -> InvoiceContext:
     """Best-effort field extraction for invoices and point-of-sale receipts.
 
     Every value is taken verbatim from an OCR line; nothing is inferred when a
@@ -285,6 +405,7 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
     """
     ctx = InvoiceContext()
     previous_description: str | None = None
+    previous_amount: float | None = None
     lines = [line for _, line in lines_with_pages]
     full_text = "\n".join(lines)
     table_region = _item_table_region(lines)
@@ -318,9 +439,11 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
                 ctx.vendor_tax_id = tax_id.group(1)
                 ctx.record("vendor_tax_id", page_number, line)
 
-        if ctx.invoice_number is None:
+        if ctx.invoice_number is None and not _MONEY_RE.search(line):
             invoice_no = _INVOICE_NO_RE.search(line)
-            if invoice_no and not _MONEY_RE.search(line) and _HAS_DIGIT_RE.search(invoice_no.group(1)):
+            if invoice_no is None and _INVOICE_KEYWORD_RE.search(line):
+                invoice_no = _INVOICE_NO_LOOSE_RE.search(line)
+            if invoice_no and _HAS_DIGIT_RE.search(invoice_no.group(1)):
                 ctx.invoice_number = invoice_no.group(1)
                 ctx.record("invoice_number", page_number, line)
 
@@ -416,22 +539,33 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
                 previous_description = None
                 continue
 
-        qty_x_match = _QTY_X_PRICE_RE.match(line)
+        # Receipts split an item across two rows: the description on one, the
+        # "1x 12.50 12.50" figures on the next. The description row sometimes
+        # already carries the line amount ("COKE LIGHT RM4.40" / "#2 X RM 2.20").
+        qty_x_match = _QTY_X_PRICE_RE.match(line) or _HASH_QTY_X_PRICE_RE.match(line)
         if qty_x_match and previous_description:
             unit_price = _parse_money(qty_x_match.group("unit_price"))
-            amount = _parse_money(qty_x_match.group("amount"))
+            groups = qty_x_match.groupdict()
+            # An unmatched quantity group is the OCR-confusion branch ("tx 2.64"),
+            # which is a quantity of one.
+            quantity = float(groups["qty"]) if groups.get("qty") else 1.0
+            amount = _parse_money(groups["amount"]) if groups.get("amount") else None
+            if amount is None:
+                amount = previous_amount
+            if amount is None and unit_price is not None:
+                amount = round(quantity * unit_price, 2)
             if unit_price is not None and amount is not None:
                 ctx.line_items.append(
                     InvoiceLineItem(
                         description=previous_description,
-                        quantity=float(qty_x_match.group("qty")),
+                        quantity=quantity,
                         unit_price=unit_price,
                         amount=amount,
                         page_number=page_number,
                         source_text=f"{previous_description} / {line}",
                     )
                 )
-            previous_description = None
+            previous_description, previous_amount = None, None
             continue
 
         for pattern in (_LINE_ITEM_TRAILING_QTY_RE, _LINE_ITEM_LEADING_QTY_RE):
@@ -449,10 +583,22 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]]) -> InvoiceContext:
                 )
                 break
         else:
-            if not _MONEY_RE.search(line) and len(re.sub(r"[^A-Za-z]", "", line)) >= 3:
-                previous_description = line
-            elif _MONEY_RE.search(line):
-                previous_description = None
+            letters = len(re.sub(r"[^A-Za-z]", "", line))
+            money = _money_values(line)
+            if letters >= 3 and not money:
+                previous_description, previous_amount = line, None
+            elif letters >= 3 and len(money) == 1:
+                # "973 COKE LIGHT 500ML RM4.40" - a description that already
+                # carries its line amount; the quantity follows on the next row.
+                previous_description, previous_amount = line, money[0]
+            else:
+                previous_description, previous_amount = None, None
+
+    customer = _find_customer_name(lines, rows)
+    if customer:
+        name, row_index = customer
+        ctx.customer_name = name
+        ctx.record("customer_name", lines_with_pages[row_index][0], lines[row_index])
 
     if ctx.tax_inclusive is None and ctx.tax_amount is not None and ctx.subtotal is None:
         ctx.tax_inclusive = True
