@@ -36,6 +36,11 @@
     <section class="card">
       <h2>Processed documents</h2>
       <p class="status-line">Click a row to view extracted fields, tables and validation results.</p>
+      <div class="toolbar">
+        <label class="visually-hidden" for="search">Search processed documents</label>
+        <input type="search" id="search" placeholder="Search by name, type or status" autocomplete="off" />
+        <span class="status-line" id="documents-count"></span>
+      </div>
       <table id="documents-table">
         <thead>
           <tr>

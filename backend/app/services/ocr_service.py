@@ -22,6 +22,20 @@ class PageText:
     rows: list[LayoutRow] = field(default_factory=list)
 
 
+def tesseract_version() -> str | None:
+    """The installed Tesseract version, or None if the binary is unreachable.
+
+    Used by the health endpoint: OCR is a system binary rather than a Python
+    dependency, so a deployment can start cleanly and still be unable to read a
+    scanned page.
+    """
+    try:
+        return str(pytesseract.get_tesseract_version())
+    except Exception:
+        logger.exception("Tesseract is not available")
+        return None
+
+
 class OcrService:
     """Extracts per-page text *and word geometry* from PDFs and images.
 

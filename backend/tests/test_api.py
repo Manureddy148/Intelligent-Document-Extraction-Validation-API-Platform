@@ -1,7 +1,30 @@
 def test_health_check(client):
     response = client.get("/api/v1/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["database"] == "ok"
+    assert body["ocr_engine"].startswith("tesseract")
+
+
+def test_health_check_reports_503_when_the_database_is_unreachable(client):
+    """Reporting "ok" with a dead database keeps a broken instance in the pool."""
+    from app.api.routes import health
+
+    class BrokenSession:
+        def execute(self, *args, **kwargs):
+            raise RuntimeError("connection refused")
+
+    app = client.app
+    app.dependency_overrides[health.get_db] = lambda: BrokenSession()
+    try:
+        response = client.get("/api/v1/health")
+    finally:
+        app.dependency_overrides.pop(health.get_db, None)
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "degraded"
+    assert response.json()["database"] == "unavailable"
 
 
 def test_process_rejects_unsupported_file_type(client):
@@ -82,3 +105,41 @@ def test_openapi_schema_documents_the_required_endpoints(client):
     schema = client.get("/openapi.json").json()
     for path in ["/api/v1/documents/process", "/api/v1/documents", "/api/v1/documents/{document_name}", "/api/v1/health"]:
         assert path in schema["paths"], f"{path} missing from OpenAPI schema"
+
+
+def test_list_rejects_out_of_range_paging(client):
+    """Unbounded paging parameters are input the API should refuse, not attempt."""
+    assert client.get("/api/v1/documents?limit=0").status_code == 422
+    assert client.get("/api/v1/documents?limit=9999").status_code == 422
+    assert client.get("/api/v1/documents?offset=-1").status_code == 422
+    assert client.get("/api/v1/documents?limit=10&offset=0").status_code == 200
+
+
+def test_openapi_documents_response_models_and_error_envelopes(client):
+    """Swagger must show the response shape and the errors a caller can receive."""
+    schema = client.get("/openapi.json").json()
+
+    def ok_ref(path, method):
+        content = schema["paths"][path][method]["responses"]["200"]["content"]
+        return content["application/json"]["schema"]["$ref"].rsplit("/", 1)[-1]
+
+    assert ok_ref("/api/v1/documents/process", "post") == "ProcessingResult"
+    assert ok_ref("/api/v1/documents/{document_name}", "get") == "ProcessingResult"
+    assert ok_ref("/api/v1/documents", "get") == "DocumentListResponse"
+    assert ok_ref("/api/v1/health", "get") == "HealthResponse"
+
+    upload_errors = schema["paths"]["/api/v1/documents/process"]["post"]["responses"]
+    for code in ("400", "413", "415", "422"):
+        assert code in upload_errors, f"{code} not documented on the upload endpoint"
+    assert "404" in schema["paths"]["/api/v1/documents/{document_name}"]["get"]["responses"]
+
+
+def test_unsupported_type_is_detected_from_content_not_extension(client):
+    """A text file renamed .pdf must still be rejected."""
+    response = client.post(
+        "/api/v1/documents/process",
+        files={"file": ("disguised.pdf", b"just plain text", "application/pdf")},
+        data={"document_type": "invoice"},
+    )
+    assert response.status_code == 415
+    assert response.json()["error"]["code"] == "UNSUPPORTED_FILE_TYPE"

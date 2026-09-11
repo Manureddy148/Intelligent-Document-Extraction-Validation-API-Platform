@@ -43,6 +43,7 @@ case_study/    the original brief and the provided sample documents
 - [Local setup](#local-setup)
 - [Environment variables](#environment-variables)
 - [API](#api)
+- [Frontend](#frontend)
 - [OCR and extraction approach](#ocr-and-extraction-approach)
 - [Financial validation rules and tolerance](#financial-validation-rules-and-tolerance)
 - [Persistence](#persistence)
@@ -158,7 +159,11 @@ hardcoded and no secret is committed. Full list in [`.env.example`](.env.example
 | `POST` | `/api/v1/documents/process` | Upload and process a document. |
 | `GET` | `/api/v1/documents` | List processed documents (dashboard). |
 | `GET` | `/api/v1/documents/{document_name}` | Latest stored result for that name. |
-| `GET` | `/api/v1/health` | Health check. |
+| `GET` | `/api/v1/health` | Health check (database + OCR engine reachability). |
+
+Every endpoint declares a Pydantic `response_model`, so `/docs` documents the
+full response schema and each controlled error envelope rather than an untyped
+object.
 
 ### Process a document
 
@@ -219,7 +224,25 @@ curl "$API/api/v1/documents?limit=20&offset=0"
 ```
 
 Processing the same document name again replaces the stored result, so
-get-by-name always returns the latest.
+get-by-name always returns the latest. `limit` is bounded to 1–500 and `offset`
+to ≥ 0; outside those ranges the API returns 422 rather than attempting the
+query.
+
+### Health
+
+```bash
+curl "$API/api/v1/health"
+```
+
+```json
+{ "status": "ok", "app_env": "production", "database": "ok", "ocr_engine": "tesseract 5.3.4" }
+```
+
+The check reaches the database with `SELECT 1` and queries the Tesseract binary,
+because both are failure modes that a process which started cleanly can still
+have. If the database is unreachable it returns **503** with
+`"status": "degraded"`, so a platform health probe takes the instance out of
+rotation instead of routing traffic to it.
 
 ### Errors
 
@@ -240,6 +263,27 @@ Failures return the same envelope with an appropriate status code:
 
 Stack traces are never returned to the caller; they go to the application log.
 Worked examples of every case are in [`sample_outputs/`](sample_outputs/).
+
+## Frontend
+
+Server-rendered Jinja2 templates with plain CSS and vanilla JavaScript, served
+by the same FastAPI process as the API — no separate build step or Node
+toolchain, and no CORS configuration to get wrong in deployment.
+
+| Page | Path | What it does |
+| --- | --- | --- |
+| Dashboard | `/` | Document-type selector, PDF/JPG/PNG upload and Process action; table of every processed document with name, type, status and processed time. Search filters by name, type or status. Rows link through to the result. |
+| Result | `/documents/{name}` | Extracted key-value pairs, line-item/table rows per period, the financial check table (formula, operands, calculated, reported, variance, status) and a toggle for the raw JSON. |
+
+Missing or unreadable fields are greyed and marked on the result page, and
+failing checks are highlighted in the validation table, so an evaluator can see
+at a glance what the document did not yield. Both pages read from the deployed
+API over `fetch`; the dashboard is backed by the database, so processed results
+survive restarts.
+
+Document names come from uploaded file names, so they are attacker-controlled:
+every value the pages interpolate is HTML-escaped, and a file named
+`<img src=x onerror=alert(1)>.jpg` renders as text rather than executing.
 
 ## OCR and extraction approach
 
@@ -344,7 +388,7 @@ use the managed database so processed results survive a restart.
 ## Testing
 
 ```bash
-cd backend && pytest            # 58 tests
+cd backend && pytest            # 62 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size
@@ -352,8 +396,9 @@ limit), the layout engine (row rebuilding, period detection, lone-value column
 assignment, schedule-column rejection, rejoining split figures), invoice
 parsing and its refusal to read headings or OCR noise as values, every document
 type's financial checks, the LLM pass (disabled, recovery, failure fallback),
-the API flow (process → get-by-name → list), error envelopes, and the HTML
-routes.
+the API flow (process → get-by-name → list), error envelopes, the OpenAPI
+contract (response models and documented error codes), paging bounds, and the
+HTML routes.
 
 [`sample_outputs/`](sample_outputs/) holds real responses produced by this code:
 all four document types, a two-page statement, scanned receipts (one that
