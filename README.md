@@ -432,6 +432,28 @@ A [`Procfile`](Procfile) and [`Aptfile`](Aptfile) are included for
 buildpack-based platforms. Note that a free instance's filesystem is ephemeral —
 use the managed database so processed results survive a restart.
 
+### Render (no billing account required)
+
+1. **New → Blueprint**, point it at this repository, **Apply**. `render.yaml`
+   defines the web service and a Postgres database; the Docker runtime is used
+   because the OCR path needs `tesseract-ocr` and `poppler-utils`, which a plain
+   Python runtime does not provide.
+2. Render prompts for the two keys marked `sync: false`. Set
+   **`IDEV_GEMINI_API_KEY`** — without it the deployment runs the deterministic
+   path only, which reconciles 230 checks instead of 282 and leaves two
+   documents unreadable. `IDEV_LLM_API_KEY` is optional.
+3. The first build takes a few minutes (the image installs Tesseract). When it
+   is live, check `/api/v1/health` — it reports whether the database and the OCR
+   engine are both reachable, and returns 503 if the database is not.
+
+The frontend needs no separate deployment: the same service serves the dashboard
+at `/`, the API under `/api/v1/`, and Swagger at `/docs`.
+
+If the blueprint is rejected because the free Postgres plan is unavailable,
+remove the `databases:` block and the `IDEV_DATABASE_URL` entry from
+`render.yaml`; the service falls back to SQLite, which works but does not
+survive a restart.
+
 ### Google Cloud Run
 
 `cloudbuild.yaml` builds the image and deploys it in one step. Cloud Build does

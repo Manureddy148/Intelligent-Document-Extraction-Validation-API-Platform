@@ -23,11 +23,24 @@ services:
         fromDatabase:
           name: document-intelligence-db
           property: connectionString
-      # Optional LLM-assisted recovery of fields OCR cannot read. Leave unset to
-      # run fully deterministically; set it in the dashboard, never in the repo.
+      # Optional LLM-assisted recovery of fields OCR cannot read. Both are
+      # marked sync:false, so Render prompts for them at deploy time and stores
+      # them on the service - they are never committed to this repository.
+      #
+      # Gemini reads the rendered page image and is the one that matters: with
+      # it the dataset reconciles 282 checks against 230 without it, and all 50
+      # documents extract rather than 48. Get a key free at
+      # https://aistudio.google.com/apikey
+      - key: IDEV_GEMINI_API_KEY
+        sync: false
+      # Anthropic is an optional text-only fallback if Gemini is exhausted.
       - key: IDEV_LLM_API_KEY
         sync: false
 
 databases:
+  # Free Postgres on Render expires after a set period; if the blueprint is
+  # rejected because the free database plan is unavailable, delete this block
+  # and the IDEV_DATABASE_URL entry above. The service then falls back to
+  # SQLite, which works but is lost whenever the instance restarts.
   - name: document-intelligence-db
     plan: free
