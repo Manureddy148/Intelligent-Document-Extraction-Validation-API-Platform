@@ -19,6 +19,7 @@ backend/       FastAPI application, services, repositories, tests
 frontend/      Jinja2 templates and static CSS/JS for the dashboard
 docs/          architecture diagram, solution presentation, screenshots
 sample_outputs/  real API responses for every required scenario
+scripts/       load the provided sample set into a running instance
 case_study/    the original brief and the provided sample documents
 ```
 
@@ -26,15 +27,29 @@ case_study/    the original brief and the provided sample documents
 
 | Item | URL |
 | --- | --- |
-| Frontend (dashboard) | _add after deploying — same host as the API, path `/`_ |
-| Backend API base | _add after deploying_ |
-| Swagger / OpenAPI | _API base_ + `/docs` |
-| Health endpoint | _API base_ + `/api/v1/health` |
+| Frontend (dashboard) | https://document-intelligence-api-s4xv.onrender.com/ |
+| Backend API base | https://document-intelligence-api-s4xv.onrender.com/api/v1 |
+| Swagger / OpenAPI | https://document-intelligence-api-s4xv.onrender.com/docs |
+| Health endpoint | https://document-intelligence-api-s4xv.onrender.com/api/v1/health |
 | GitHub repository | https://github.com/Manureddy148/Intelligent-Document-Extraction-Validation-API-Platform |
 
-> The frontend is served by the same FastAPI application as the API, so one
-> deployment covers both. See [Deployment](#deployment) for the steps — it needs
-> a hosting account, so the URLs above must be filled in after you deploy.
+The frontend is served by the same FastAPI application as the API, so one
+deployment covers both — the case study allows this explicitly ("a separate
+React, Node.js or similar frontend stack is not required").
+
+Render suspends a free instance after about fifteen minutes of inactivity, so
+the first request after a quiet spell waits roughly a minute while it wakes.
+Open the dashboard a minute before a demo.
+
+To populate the dashboard with the provided sample set:
+
+```bash
+python scripts/load_sample_documents.py https://document-intelligence-api-s4xv.onrender.com
+```
+
+It reads `case_study/sample_documents.zip` directly, takes each document's type
+from its folder, and prints the status, validation outcome and timing per
+document with totals at the end. Standard library only.
 
 ## Contents
 
