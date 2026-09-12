@@ -1,0 +1,25 @@
+# The build only needs source. Without this, `COPY backend backend` copies the
+# local virtualenv - 315MB of binaries built for the developer's machine - into
+# the image, on top of the dependencies pip already installed.
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+
+# Runtime state and local databases belong to the running instance, not the image.
+backend/data/
+**/*.db
+**/*.sqlite3
+
+.git/
+.github/
+.env
+docs/
+case_study/
+sample_outputs/
+README.md
