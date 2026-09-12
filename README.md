@@ -424,7 +424,7 @@ use the managed database so processed results survive a restart.
 ## Testing
 
 ```bash
-cd backend && pytest            # 73 tests
+cd backend && pytest            # 79 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size
@@ -468,18 +468,20 @@ pass enabled.
 | Document type | Docs | PASS | FAIL | NOT_APPLICABLE |
 | --- | --- | --- | --- | --- |
 | Balance sheet | 10 | 49 | 0 | 11 |
-| Profit & loss | 10 | 90 | 1 | 9 |
+| Profit & loss | 10 | 96 | 0 | 4 |
 | Cash flow | 10 | 37 | 0 | 3 |
 | Invoice | 20 | 29 | 2 | 25 |
-| **Total** | **50** | **255** | **3** | **48** |
+| **Total** | **50** | **261** | **2** | **43** |
 
-The vision pass turns 24 `NOT_APPLICABLE` results into reconciled checks, and
+The vision pass turns 29 `NOT_APPLICABLE` results into reconciled checks, and
 all 50 documents reach `processing_status: PASS` — including the two 2022
 statements that the deterministic path cannot read at all. The 2022 balance
 sheet goes from 4 of 17 fields to 17 of 18, and its components reconcile to the
 reported total exactly. Field coverage rises across the invoices too, typically
-from 2–8 fields to 10–15. The cost is latency: a median of 8.7 s against 2.1 s,
-since a document with missing fields makes one extra call.
+from 2–8 fields to 10–15. Every statement check that can be evaluated now
+passes, and the only two failures left in the whole dataset are the genuine
+document discrepancies described above. The cost is latency: a median of 9.0 s
+against 2.1 s, since a document with missing fields makes one extra call.
 
 The numbers below describe the deterministic path, which is what runs without a
 key.

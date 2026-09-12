@@ -220,10 +220,20 @@ class LlmExtractionService:
         }
         # A free-tier model can be at capacity for minutes at a time, and a
         # document should not lose its recovery pass because one model is busy.
+        # Retries across several models compound: one document spent 134s in
+        # here while the free tier was busy. The whole pass gets one budget, and
+        # the document falls back to its deterministic result when that runs out.
+        deadline = time.monotonic() + self.settings.llm_total_budget_seconds
         payload, model_used = None, None
         for model in self._model_chain():
+            if time.monotonic() >= deadline:
+                logger.info("Vision pass gave up after %ss; keeping the rule-based result",
+                            self.settings.llm_total_budget_seconds)
+                break
             try:
-                payload = self._post_json(_GEMINI_ENDPOINT.format(model=model), body, headers)
+                payload = self._post_json(
+                    _GEMINI_ENDPOINT.format(model=model), body, headers, deadline
+                )
                 model_used = model
                 break
             except Exception as exc:
@@ -253,10 +263,12 @@ class LlmExtractionService:
     # would only waste the caller's time.
     _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
-    def _post_json(self, url: str, body: dict, headers: dict) -> dict:
+    def _post_json(self, url: str, body: dict, headers: dict, deadline: float) -> dict:
         data = json.dumps(body).encode()
         last_error: Exception | None = None
         for attempt in range(self.settings.llm_max_attempts):
+            if time.monotonic() >= deadline:
+                break
             request = urllib.request.Request(url, data=data, headers=headers, method="POST")
             try:
                 with urllib.request.urlopen(request, timeout=self.settings.llm_timeout_seconds) as response:
@@ -273,10 +285,12 @@ class LlmExtractionService:
                 logger.info("Vision model call failed (attempt %s): %s; retrying", attempt + 1, exc)
 
             if attempt + 1 < self.settings.llm_max_attempts:
-                time.sleep(2 ** attempt)
+                backoff = 2 ** attempt
+                if time.monotonic() + backoff >= deadline:
+                    break
+                time.sleep(backoff)
 
-        assert last_error is not None
-        raise last_error
+        raise last_error or TimeoutError("vision pass ran out of time")
 
     def _call_anthropic(
         self, document_text: str, document_type: str, missing_fields: list[str], periods: list[str]

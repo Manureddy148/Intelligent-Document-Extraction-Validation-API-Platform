@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     llm_max_text_chars: int = 20000
     llm_timeout_seconds: int = 90
     llm_max_attempts: int = 3
+    # Whole-pass budget across every retry and fallback model, so a busy free
+    # tier cannot hold a request open indefinitely.
+    llm_total_budget_seconds: int = 45
     # Longest edge of the page images sent to the vision model.
     vision_max_image_px: int = 1600
 

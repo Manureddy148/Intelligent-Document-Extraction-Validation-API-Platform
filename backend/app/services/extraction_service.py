@@ -223,7 +223,13 @@ class ExtractionService:
 
         total_income = find_in_sections(sections, "income", "total")
         total_expenditure = find_in_sections(sections, "expenditure", "total")
-        attributable = find_preferring_section(sections, "profit", "attributable to the group")
+        # "Brought forward consolidated profit attributable to the group" carries
+        # the same phrase as the profit row itself. Where a poor scan loses the
+        # profit row, the lookup would otherwise land on the brought-forward row
+        # and report one figure as both operands of the appropriation check.
+        attributable = find_preferring_section(
+            sections, "profit", "attributable to the group", exclude=("brought forward",)
+        )
         total_appropriation = find_in_sections(sections, "appropriations", "total")
 
         extracted_data = {

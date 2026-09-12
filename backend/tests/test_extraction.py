@@ -624,3 +624,34 @@ def test_gemini_string_scalars_are_coerced_to_numbers():
     assert _coerce("42") == 42
     assert _coerce("ABC Traders") == "ABC Traders"
     assert _coerce(None) is None
+
+
+def test_brought_forward_row_is_not_read_as_the_attributable_profit():
+    """Both labels end "attributable to the group"; a lost profit row must not
+    make the appropriation check compare one figure against itself."""
+    section = StatementSection(name="profit")
+    section.items = [
+        StatementLineItem(
+            "Add: Brought forward consolidated profit attributable to the group",
+            "profit__bf", {"2022": 61817.68}, 1, "row",
+        ),
+    ]
+    assert section.find("attributable to the group") is not None
+    assert section.find("attributable to the group", exclude=("brought forward",)) is None
+
+
+def test_vision_pass_stops_at_its_time_budget(monkeypatch):
+    """Retries across several models must not hold a request open indefinitely."""
+    import time as _time
+
+    from app.services.llm_extraction_service import LlmExtractionService
+
+    service = LlmExtractionService(Settings(gemini_api_key="k", llm_total_budget_seconds=0))
+    calls = []
+    monkeypatch.setattr(
+        service, "_post_json", lambda *a, **k: calls.append(1) or {"candidates": []}
+    )
+    started = _time.perf_counter()
+    assert service.recover_missing_fields("text", "invoice", ["total_amount"], [b"png"]) == {}
+    assert calls == []  # budget already spent, so no model was tried
+    assert _time.perf_counter() - started < 1
