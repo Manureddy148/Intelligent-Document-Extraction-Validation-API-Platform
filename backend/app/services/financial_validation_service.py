@@ -33,6 +33,30 @@ def _sum_components(section: StatementSection | None, period: str) -> float | No
     return sum(values)
 
 
+# The rows that make up each balance-sheet total. Summing these named fields is
+# preferred over summing whatever line items OCR managed to read: a row the scan
+# lost entirely leaves no trace in the section, so a sum of the survivors looks
+# complete while being short, and reports a reconciliation failure the document
+# does not support.
+_LIABILITY_COMPONENTS = (
+    "capital",
+    "reserves_and_surplus",
+    "minority_interest",
+    "deposits",
+    "borrowings",
+    "other_liabilities_and_provisions",
+)
+_ASSET_COMPONENTS = (
+    "cash_and_balances_with_central_bank",
+    "balances_with_banks",
+    "investments",
+    "advances",
+    "fixed_assets",
+    "other_assets",
+    "goodwill_on_consolidation",
+)
+
+
 class FinancialValidationService:
     """Runs the per-document-type reconciliation checks required by the case study.
 
@@ -68,6 +92,32 @@ class FinancialValidationService:
         if any(check.status == ValidationStatus.PASS for check in checks):
             return ValidationStatus.PASS
         return ValidationStatus.NOT_APPLICABLE
+
+    def _component_sum(
+        self, outcome: ExtractionOutcome, period: str, section: str, fields: tuple[str, ...]
+    ) -> float | None:
+        """Sum the components of a reported total.
+
+        The document's own rows are the right source: a statement may carry
+        components beyond the fields named here, and summing only the named ones
+        would report a shortfall the document does not have. But a scan that lost
+        rows outright leaves no trace of them in the section, so a sum of the
+        survivors looks complete while being short. The section is therefore only
+        trusted when it still holds at least as many component rows as there are
+        named components; below that, the named fields - which the vision pass
+        can recover from the page - are used instead.
+        """
+        rows = outcome.sections.get(section)
+        row_count = (
+            len([item for item in rows.items if "total" not in item.label.lower()]) if rows else 0
+        )
+        if row_count >= len(fields):
+            return _sum_components(rows, period)
+
+        values = [self._value(outcome, name, period) for name in fields]
+        if all(value is not None for value in values):
+            return round(sum(values), 2)
+        return _sum_components(rows, period)
 
     def _value(self, outcome: ExtractionOutcome, key: str, period: str) -> float | None:
         """Read an extracted field's value for a period (statements) or directly (invoices)."""
@@ -239,7 +289,9 @@ class FinancialValidationService:
                 )
             )
 
-            liabilities_components = _sum_components(outcome.sections.get("capital_and_liabilities"), period)
+            liabilities_components = self._component_sum(
+                outcome, period, "capital_and_liabilities", _LIABILITY_COMPONENTS
+            )
             checks.append(
                 self._compare(
                     name=f"capital_and_liabilities_reconciliation[{period}]",
@@ -250,7 +302,7 @@ class FinancialValidationService:
                 )
             )
 
-            asset_components = _sum_components(outcome.sections.get("assets"), period)
+            asset_components = self._component_sum(outcome, period, "assets", _ASSET_COMPONENTS)
             checks.append(
                 self._compare(
                     name=f"assets_reconciliation[{period}]",

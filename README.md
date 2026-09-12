@@ -288,8 +288,32 @@ every value the pages interpolate is HTML-escaped, and a file named
 ## OCR and extraction approach
 
 **OCR service:** free/self-hosted Tesseract, with Poppler rasterising PDFs that
-have no text layer (all of the provided statements). No paid OCR service is
-used, so there is no key to configure and no quota to exhaust.
+have no text layer (all of the provided statements). No key, no quota, and no
+network call — the pipeline is complete and deterministic without any external
+service.
+
+**Optional vision model:** Google **Gemini** (`gemini-flash-latest`, free tier),
+enabled by setting `IDEV_GEMINI_API_KEY`. The case study encourages a free-tier
+document/OCR service "or equivalent" and permits "any LLM/model available to the
+participant"; Gemini was chosen over Cloud Vision because Cloud Vision returns
+raw text and boxes — the same thing Tesseract already provides — whereas the
+binding problem here is *reading a degraded scan at all*. On the 2022 statements
+Tesseract drops entire row labels, and no parser can recover a row that is not
+in the text. Gemini is shown the rendered page and asked only for the fields
+still null after the deterministic pass, so it fills gaps rather than replacing
+anything already grounded in a source row.
+
+The guarantees are unchanged when it runs: a value the deterministic parser
+grounded is never overwritten; every recovered value must come back with the
+source line it was read from, and is discarded if it does not; and the model is
+instructed to return null rather than guess. Recovered values are marked
+`"extraction_method": "llm_assisted"` so an evaluator can see exactly which
+figures came from where. If the model is unavailable, rate-limited or slow, the
+document still returns its deterministic result — the call is retried with
+backoff, falls back to other models, and on failure is simply skipped.
+
+An Anthropic text-only path (`IDEV_LLM_API_KEY`) is retained as an alternative.
+Neither key is committed; both are read from the environment.
 
 **Pages that were photographed sideways.** A rotated scan is the one failure
 Tesseract does not announce: it returns confident-looking nonsense
@@ -425,6 +449,12 @@ Every one of the **50 documents** in the supplied dataset — 30 statements
 financial checks counted. A check only passes if the numbers extracted from the
 document genuinely add up, so this doubles as an extraction-accuracy measure.
 
+Both configurations were measured over the full dataset — the deterministic
+Tesseract pipeline alone, and the same pipeline with the Gemini vision recovery
+pass enabled.
+
+**Deterministic only** (no API key, the default):
+
 | Document type | Docs | PASS | FAIL | NOT_APPLICABLE |
 | --- | --- | --- | --- | --- |
 | Balance sheet | 10 | 45 | 0 | 15 |
@@ -432,6 +462,27 @@ document genuinely add up, so this doubles as an extraction-accuracy measure.
 | Cash flow | 10 | 32 | 0 | 8 |
 | Invoice | 20 | 29 | 2 | 25 |
 | **Total** | **50** | **230** | **2** | **72** |
+
+**With the Gemini vision pass** (`IDEV_GEMINI_API_KEY` set):
+
+| Document type | Docs | PASS | FAIL | NOT_APPLICABLE |
+| --- | --- | --- | --- | --- |
+| Balance sheet | 10 | 49 | 0 | 11 |
+| Profit & loss | 10 | 90 | 1 | 9 |
+| Cash flow | 10 | 37 | 0 | 3 |
+| Invoice | 20 | 29 | 2 | 25 |
+| **Total** | **50** | **255** | **3** | **48** |
+
+The vision pass turns 24 `NOT_APPLICABLE` results into reconciled checks, and
+all 50 documents reach `processing_status: PASS` — including the two 2022
+statements that the deterministic path cannot read at all. The 2022 balance
+sheet goes from 4 of 17 fields to 17 of 18, and its components reconcile to the
+reported total exactly. Field coverage rises across the invoices too, typically
+from 2–8 fields to 10–15. The cost is latency: a median of 8.7 s against 2.1 s,
+since a document with missing fields makes one extra call.
+
+The numbers below describe the deterministic path, which is what runs without a
+key.
 
 All 50 returned HTTP 200 with no crash; 48 finished `processing_status: PASS`
 and 2 (the 2022 statements) `FAILED` because their scans are too poor to yield

@@ -192,6 +192,9 @@ class ExtractionService:
             "advances": _field_from_item(find_in_sections(sections, "assets", "advances")),
             "fixed_assets": _field_from_item(find_in_sections(sections, "assets", "fixed assets")),
             "other_assets": _field_from_item(find_in_sections(sections, "assets", "other assets")),
+            "goodwill_on_consolidation": _field_from_item(
+                find_in_sections(sections, "assets", "goodwill")
+            ),
             "total_assets": _field_from_item(assets_total),
             "total_equity": _field(
                 None,

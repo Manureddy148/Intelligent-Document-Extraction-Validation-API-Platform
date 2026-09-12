@@ -83,6 +83,33 @@ class OcrService:
             logger.exception("Text extraction failed")
             raise ExtractionFailedError("The document could not be read for text extraction.") from exc
 
+    def render_page_images(self, content: bytes, content_type: str) -> list[bytes]:
+        """The pages as PNG bytes, for the optional vision-based recovery pass.
+
+        Downscaled first: the model needs to read the page, not to receive every
+        pixel of a 12-megapixel photograph, and the smaller payload is faster and
+        cheaper for no loss of legibility.
+        """
+        try:
+            if content_type == "application/pdf":
+                images = convert_from_bytes(
+                    content, dpi=self.settings.ocr_dpi, last_page=self.settings.max_pages
+                )
+            else:
+                images = [Image.open(io.BytesIO(content))]
+        except Exception:
+            logger.exception("Could not render page images for the vision pass")
+            return []
+
+        rendered: list[bytes] = []
+        for image in images[: self.settings.max_pages]:
+            copy = image.convert("RGB")
+            copy.thumbnail((self.settings.vision_max_image_px,) * 2)
+            buffer = io.BytesIO()
+            copy.save(buffer, format="PNG", optimize=True)
+            rendered.append(buffer.getvalue())
+        return rendered
+
     def _extract_pdf(self, content: bytes) -> list[PageText]:
         pages: list[PageText] = []
         with pdfplumber.open(io.BytesIO(content)) as pdf:

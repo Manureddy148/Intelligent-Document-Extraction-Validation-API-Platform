@@ -41,10 +41,27 @@ class Settings(BaseSettings):
 
     # Optional LLM-assisted recovery of fields OCR could not resolve. Disabled
     # unless an API key is supplied; the pipeline is deterministic without it.
+    # Gemini reads the rendered page image, which is what poor scans need: where
+    # OCR dropped a row label the label is still plainly on the page. Anthropic
+    # is a text-only fallback over the OCR output. Whichever key is set decides;
+    # with neither, the pipeline is fully deterministic.
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-flash-latest"
+    # Tried in order when the configured model is at capacity. Free-tier models
+    # return 503 "high demand" for minutes at a time, and a document should not
+    # lose its recovery pass because one model is busy.
+    gemini_fallback_models: tuple[str, ...] = ("gemini-flash-lite-latest", "gemini-3-flash-preview")
     llm_api_key: str | None = None
     llm_model: str = "claude-opus-5"
-    llm_max_tokens: int = 4096
+    # Enough headroom for every field of a statement, each with its own value
+    # per reporting period and the source line it was read from; at 4096 the
+    # answer was truncated mid-string and discarded as invalid JSON.
+    llm_max_tokens: int = 16384
     llm_max_text_chars: int = 20000
+    llm_timeout_seconds: int = 90
+    llm_max_attempts: int = 3
+    # Longest edge of the page images sent to the vision model.
+    vision_max_image_px: int = 1600
 
     upload_dir: str = "./data/uploads"
 

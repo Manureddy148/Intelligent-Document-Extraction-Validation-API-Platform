@@ -200,7 +200,7 @@ def test_llm_recovery_keeps_only_non_null_values(monkeypatch):
     service = LlmExtractionService(Settings(llm_api_key="test-key"))
     monkeypatch.setattr(
         service,
-        "_call_model",
+        "_call_anthropic",
         lambda *args, **kwargs: {
             "total_amount": {"value": 9.0, "page_number": 1, "source_text": "Total 9.00"},
             "discount": {"value": None, "page_number": None, "source_text": None},
@@ -217,7 +217,7 @@ def test_llm_failure_falls_back_silently(monkeypatch):
     def _boom(*args, **kwargs):
         raise RuntimeError("api unavailable")
 
-    monkeypatch.setattr(service, "_call_model", _boom)
+    monkeypatch.setattr(service, "_call_anthropic", _boom)
     assert service.recover_missing_fields("text", "invoice", ["total_amount"]) == {}
 
 
@@ -586,3 +586,41 @@ def test_party_names_are_cut_at_the_neighbouring_column_label():
     # A legitimate suffix must survive.
     assert _trim_party_name("Oz Optics Ltd.") == "Oz Optics Ltd."
     assert _trim_party_name("Sandoval-Phillips") == "Sandoval-Phillips"
+
+
+def test_gemini_is_preferred_when_its_key_is_set():
+    from app.services.llm_extraction_service import LlmExtractionService
+
+    assert LlmExtractionService(Settings()).provider is None
+    assert LlmExtractionService(Settings(llm_api_key="k")).provider == "anthropic"
+    gemini = LlmExtractionService(Settings(gemini_api_key="k", llm_api_key="k"))
+    assert gemini.provider == "gemini"
+    assert gemini.model == Settings().gemini_model
+
+
+def test_llm_values_without_source_text_are_discarded(monkeypatch):
+    """An ungrounded value is exactly what this pipeline promises not to emit."""
+    from app.services.llm_extraction_service import LlmExtractionService
+
+    service = LlmExtractionService(Settings(gemini_api_key="k"))
+    monkeypatch.setattr(
+        service,
+        "_call_gemini",
+        lambda *a, **k: {
+            "total_amount": {"value": "9.00", "page_number": 1, "source_text": "Total 9.00"},
+            "subtotal": {"value": "8.49", "page_number": 1, "source_text": "  "},
+        },
+    )
+    recovered = service.recover_missing_fields("text", "invoice", ["total_amount", "subtotal"], [b"png"])
+    assert set(recovered) == {"total_amount"}
+    assert recovered["total_amount"]["value"] == 9.0  # string coerced back to a number
+
+
+def test_gemini_string_scalars_are_coerced_to_numbers():
+    from app.services.llm_extraction_service import _coerce
+
+    assert _coerce("1,234.56") == 1234.56
+    assert _coerce("(1,234)") == -1234
+    assert _coerce("42") == 42
+    assert _coerce("ABC Traders") == "ABC Traders"
+    assert _coerce(None) is None

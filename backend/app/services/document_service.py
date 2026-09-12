@@ -70,7 +70,9 @@ class DocumentService:
 
         outcome = self.extraction_service.extract(pages, document_type)
 
-        llm_assisted = self._recover_missing_fields(pages, outcome, document_type)
+        llm_assisted = self._recover_missing_fields(
+            pages, outcome, document_type, content, file_validation.file_type
+        )
 
         validation_summary = self.financial_validation_service.validate(document_type, outcome)
 
@@ -85,7 +87,7 @@ class DocumentService:
             ocr_used=outcome.ocr_used,
             ocr_engine="tesseract" if outcome.ocr_used else None,
             extraction_method="rule_based_layout" + ("+llm_assisted" if llm_assisted else ""),
-            llm_model=self.settings.llm_model if llm_assisted else None,
+            llm_model=self.llm_service.model if llm_assisted else None,
             processed_at=datetime.now(timezone.utc),
             processing_time_ms=processing_time_ms,
             pages_processed=outcome.pages_processed,
@@ -117,8 +119,15 @@ class DocumentService:
         )
         return result_dict
 
-    def _recover_missing_fields(self, pages, outcome, document_type: DocumentType) -> bool:
-        """Use the optional LLM pass to fill fields the rule-based extractor left null."""
+    def _recover_missing_fields(
+        self, pages, outcome, document_type: DocumentType, content: bytes, file_type: str
+    ) -> bool:
+        """Use the optional LLM pass to fill fields the rule-based extractor left null.
+
+        Only fields still null after the deterministic pass are asked about, so a
+        value grounded in a source row is never replaced by a model's reading of
+        the same page.
+        """
         if not self.llm_service.enabled:
             return False
 
@@ -131,7 +140,21 @@ class DocumentService:
             return False
 
         document_text = "\n".join(f"--- page {page.page_number} ---\n{page.text}" for page in pages)
-        recovered = self.llm_service.recover_missing_fields(document_text, document_type.value, missing)
+        page_images = (
+            self.ocr_service.render_page_images(content, file_type)
+            if self.llm_service.provider == "gemini"
+            else []
+        )
+
+        started = time.perf_counter()
+        recovered = self.llm_service.recover_missing_fields(
+            document_text, document_type.value, missing, page_images, outcome.periods
+        )
+        logger.info(
+            "LLM recovery pass (%s) filled %s of %s missing fields in %sms",
+            self.llm_service.provider, len(recovered), len(missing),
+            int((time.perf_counter() - started) * 1000),
+        )
         for key, field in recovered.items():
             outcome.extracted_data[key] = field
         return bool(recovered)
