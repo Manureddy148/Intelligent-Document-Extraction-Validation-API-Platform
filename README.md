@@ -421,6 +421,34 @@ A [`Procfile`](Procfile) and [`Aptfile`](Aptfile) are included for
 buildpack-based platforms. Note that a free instance's filesystem is ephemeral —
 use the managed database so processed results survive a restart.
 
+### Google Cloud Run
+
+`cloudbuild.yaml` builds the image and deploys it in one step. Cloud Build does
+the build, so no local Docker daemon is required.
+
+```bash
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+                       artifactregistry.googleapis.com
+gcloud artifacts repositories create containers \
+  --repository-format=docker --location=asia-south1
+
+gcloud builds submit --config cloudbuild.yaml \
+  --substitutions=_REGION=asia-south1,_SERVICE=document-intelligence
+```
+
+The service is given 2 vCPU and 2Gi: OCR on a scanned page is CPU-bound, and the
+optional vision pass waits on a network call, so the 1 vCPU / 512Mi default is
+not enough. Set the API key on the service rather than in the image:
+
+```bash
+gcloud run services update document-intelligence --region=asia-south1 \
+  --update-env-vars=IDEV_GEMINI_API_KEY=...   # or --update-secrets from Secret Manager
+```
+
+Cloud Run's filesystem is ephemeral, so point `IDEV_DATABASE_URL` at Cloud SQL
+(or any managed Postgres) for results to survive a restart; the default SQLite
+file is fine only for a quick look.
+
 ## Testing
 
 ```bash

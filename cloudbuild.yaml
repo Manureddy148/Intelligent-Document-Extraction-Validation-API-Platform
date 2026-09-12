@@ -1,0 +1,50 @@
+# Builds the API image and deploys it to Cloud Run.
+#
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions=_REGION=asia-south1,_SERVICE=document-intelligence
+#
+# Cloud Build builds the image, so no local Docker daemon is needed. Secrets are
+# never baked into the image: IDEV_GEMINI_API_KEY is set on the Cloud Run
+# service (or read from Secret Manager), not here.
+substitutions:
+  _REGION: asia-south1
+  _SERVICE: document-intelligence
+  _REPO: containers
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - backend/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA"]
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      # OCR on a scanned page is CPU-bound and the vision pass waits on a
+      # network call, so the default 1 vCPU / 512Mi is not enough.
+      - --cpu=2
+      - --memory=2Gi
+      - --timeout=300
+      - --set-env-vars=IDEV_APP_ENV=production,IDEV_LOG_LEVEL=INFO
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$SHORT_SHA
+options:
+  logging: CLOUD_LOGGING_ONLY
