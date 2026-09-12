@@ -1,0 +1,188 @@
+{
+  "document_name": "20251118_000612.jpg",
+  "document_type": "invoice",
+  "processing_status": "PASS",
+  "overall_confidence": null,
+  "file_validation": {
+    "file_type": "image/jpeg",
+    "is_supported": true,
+    "is_readable": true,
+    "page_count": 1,
+    "status": "PASS",
+    "reason": null
+  },
+  "extracted_data": {
+    "vendor_name": {
+      "value": "Shankar Enterprises-(7°",
+      "page_number": 1,
+      "source_text": "Shankar Enterprises-(7° il No."
+    },
+    "vendor_address": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "vendor_tax_id": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "customer_name": {
+      "value": "Narayan Bhandar",
+      "page_number": 1,
+      "source_text": "Laxmi Narayan Bhandar 2 Terms of Delivery"
+    },
+    "invoice_number": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "invoice_date": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "invoice_time": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "currency": {
+      "value": "INR",
+      "page_number": null,
+      "source_text": null
+    },
+    "subtotal": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "tax_amount": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "tax_rate_percent": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "tax_inclusive": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "discount": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "total_amount": {
+      "value": 6815.17,
+      "page_number": 1,
+      "source_text": "Total: 6,815.17 361"
+    },
+    "total_quantity": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "cash_paid": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "change": {
+      "value": null,
+      "page_number": null,
+      "source_text": null
+    },
+    "line_items": [
+      {
+        "description": "KG (12 PKT) PCS",
+        "quantity": null,
+        "unit_price": null,
+        "amount": 2064.6,
+        "page_number": 1,
+        "source_text": "2 KG (12 PKT) PCS 203.02 472.05 PCs 2,064.60"
+      },
+      {
+        "description": "6SPARKLE 200.GM BATI 48PCS. 24054000/24 PCS",
+        "quantity": null,
+        "unit_price": null,
+        "amount": 356.88,
+        "page_number": 1,
+        "source_text": "6SPARKLE 200.GM BATI 48PCS. 24054000/24 PCS| 17.55 14.87 PCS 356.88"
+      }
+    ]
+  },
+  "validation": {
+    "checks": [
+      {
+        "name": "line_item_1_quantity_times_unit_price",
+        "formula": "quantity * unit_price ≈ line amount",
+        "operands": {
+          "quantity": null,
+          "unit_price": null
+        },
+        "calculated_value": null,
+        "reported_value": 2064.6,
+        "variance": null,
+        "status": "NOT_APPLICABLE",
+        "message": "Not all values required by this check are present in the document (missing: quantity, unit_price)."
+      },
+      {
+        "name": "line_item_2_quantity_times_unit_price",
+        "formula": "quantity * unit_price ≈ line amount",
+        "operands": {
+          "quantity": null,
+          "unit_price": null
+        },
+        "calculated_value": null,
+        "reported_value": 356.88,
+        "variance": null,
+        "status": "NOT_APPLICABLE",
+        "message": "Not all values required by this check are present in the document (missing: quantity, unit_price)."
+      },
+      {
+        "name": "line_items_sum_reconciliation",
+        "formula": "sum(line item amounts) ≈ subtotal",
+        "operands": {
+          "line_items_sum": 2421.48,
+          "subtotal": null,
+          "total_amount": 6815.17
+        },
+        "calculated_value": 2421.48,
+        "reported_value": null,
+        "variance": null,
+        "status": "NOT_APPLICABLE",
+        "message": "Not all values required by this check are present in the document (missing: subtotal)."
+      },
+      {
+        "name": "invoice_total_check",
+        "formula": "subtotal + tax_amount - discount ≈ total_amount",
+        "operands": {
+          "subtotal": null,
+          "tax_amount": null,
+          "discount": null
+        },
+        "calculated_value": null,
+        "reported_value": 6815.17,
+        "variance": null,
+        "status": "NOT_APPLICABLE",
+        "message": "No subtotal is printed on this document, so the total cannot be recomputed from its parts."
+      }
+    ],
+    "overall_status": "NOT_APPLICABLE",
+    "issues": []
+  },
+  "processing_metadata": {
+    "ocr_used": true,
+    "ocr_engine": "tesseract",
+    "extraction_method": "rule_based_layout",
+    "llm_model": null,
+    "processed_at": "2026-09-12T03:48:16.450363Z",
+    "processing_time_ms": 11635,
+    "pages_processed": 1
+  }
+}

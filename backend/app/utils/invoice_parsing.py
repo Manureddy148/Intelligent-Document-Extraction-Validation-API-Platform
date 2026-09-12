@@ -319,6 +319,32 @@ _CUSTOMER_FIELD_HEADER_RE = re.compile(
 )
 
 
+# Invoice headers pack several labelled boxes onto one line, so a name read from
+# one box often runs into the label of the next ("Laxmi Narayan Bhandar 2 Terms
+# of Delivery"). The name ends where the neighbouring label begins.
+_ADJACENT_FIELD_LABEL_RE = re.compile(
+    r"\s*\b(?:terms?\s+of\b|mode/?\s*terms?\b|delivery\s+note\b|dispatch\w*\b|destination\b"
+    r"|buyer'?s?\s+order\b|reference\w*\b|due\s+date\b|invoice\s+date\b|dated\b|other\s+references?\b"
+    r"|supplier'?s?\s+ref\b|\bno\.?\s*:?\s*$).*",
+    re.IGNORECASE,
+)
+
+
+def _trim_party_name(value: str) -> str:
+    """Cut a name at the neighbouring column's label and tidy the edges."""
+    trimmed = _ADJACENT_FIELD_LABEL_RE.sub("", value).strip()
+    # Trailing OCR crumbs from the next column ("-(7° il No.") leave stray
+    # punctuation and one- or two-character fragments behind.
+    trimmed = re.sub(r"[\s\-_,;:|/(\[]+$", "", trimmed)
+    while True:
+        shorter = re.sub(r"\s+[^A-Za-z0-9]{1,3}$", "", trimmed).strip()
+        shorter = re.sub(r"\s+(?:[A-Za-z]{1,2}|\d{1,2})$", "", shorter).strip()
+        if shorter == trimmed or len(re.sub(r"[^A-Za-z]", "", shorter)) < 4:
+            break
+        trimmed = shorter
+    return re.sub(r"[\s\-_,;:|/(\[]+$", "", trimmed).strip()
+
+
 def _looks_like_a_party_name(line: str) -> bool:
     """Enough letters, and not a date, an amount, or a bare address line."""
     letters = re.sub(r"[^A-Za-z]", "", line)
@@ -364,7 +390,7 @@ def _find_customer_name(lines: list[str], rows: list | None) -> tuple[str, int] 
                 and not _FALLBACK_CUSTOMER_LABEL_RE.search(inline)
                 and not _SELLER_LABEL_RE.search(inline)
             ):
-                return inline.strip(), index
+                return _trim_party_name(inline), index
 
             # Otherwise the name is on the row below, in the label's column.
             if index + 1 >= len(lines):
@@ -389,11 +415,23 @@ def _find_customer_name(lines: list[str], rows: list | None) -> tuple[str, int] 
                         and (pattern.search(w.text) or _SELLER_LABEL_RE.search(w.text)
                              or _FALLBACK_CUSTOMER_LABEL_RE.search(w.text))
                     ]
-                    start = min((w.x0 for w in row.words if abs(w.x0 - label_word.x0) < 1), default=label_word.x0)
+                    # Text inside a labelled box often starts a little left of the
+                    # label itself, so the band opens slightly before it - scaled
+                    # to the text height so it holds at any resolution - but never
+                    # back past whatever label sits to its left.
+                    indent = 3 * max(label_word.bottom - label_word.top, 1.0)
+                    earlier = [
+                        w.x1
+                        for w in row.words
+                        if w.x1 <= label_word.x0
+                        and (pattern.search(w.text) or _SELLER_LABEL_RE.search(w.text)
+                             or _FALLBACK_CUSTOMER_LABEL_RE.search(w.text))
+                    ]
+                    start = max(label_word.x0 - indent, max(earlier, default=0.0))
                     candidate = _band_text(row_below, start, min(later) if later else float("inf")) or below
 
             if _looks_like_a_party_name(candidate):
-                return candidate.strip(), index + 1
+                return _trim_party_name(candidate), index + 1
     return None
 
 
@@ -427,7 +465,7 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]], rows: list | None = N
             and not _DATE_RE.search(line)
             and not _MONEY_RE.search(line)
         ):
-            ctx.vendor_name = line
+            ctx.vendor_name = _trim_party_name(line)
             ctx.record("vendor_name", page_number, line)
         elif ctx.vendor_address is None and _ADDRESS_HINT_RE.search(line):
             ctx.vendor_address = line

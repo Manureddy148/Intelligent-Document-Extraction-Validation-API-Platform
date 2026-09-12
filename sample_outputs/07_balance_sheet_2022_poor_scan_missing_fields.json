@@ -266,8 +266,8 @@
     "ocr_engine": "tesseract",
     "extraction_method": "rule_based_layout",
     "llm_model": null,
-    "processed_at": "2026-09-11T11:54:10.368432Z",
-    "processing_time_ms": 2383,
+    "processed_at": "2026-09-12T03:46:29.069673Z",
+    "processing_time_ms": 2188,
     "pages_processed": 1
   }
 }

@@ -575,3 +575,14 @@ def test_tax_registration_and_item_counts_are_not_invoice_numbers():
     """The loose form only applies to a line that names an invoice."""
     assert parse_invoice([(1, "GST ID. NO s 000191747712")]).invoice_number is None
     assert parse_invoice([(1, "No of items: 2")]).invoice_number is None
+
+
+def test_party_names_are_cut_at_the_neighbouring_column_label():
+    """Invoice headers pack labelled boxes onto one line; the name ends first."""
+    from app.utils.invoice_parsing import _trim_party_name
+
+    assert _trim_party_name("Laxmi Narayan Bhandar 2 Terms of Delivery") == "Laxmi Narayan Bhandar"
+    assert _trim_party_name("Cruz PLC Dispatch Doc No") == "Cruz PLC"
+    # A legitimate suffix must survive.
+    assert _trim_party_name("Oz Optics Ltd.") == "Oz Optics Ltd."
+    assert _trim_party_name("Sandoval-Phillips") == "Sandoval-Phillips"

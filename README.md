@@ -474,7 +474,21 @@ than by assumption:
 | Re-read a page at another orientation when it reads badly | 230 / 2 / 70 — one invoice went from unreadable to 71 rows |
 | Unresolvable item columns report no quantity instead of a wide "discrepancy" | **230 / 2 / 72** across all 50 documents |
 | 300 DPI instead of 200 | 215 / 9 / 73 — *rejected*, re-measured against the final extractor |
+| Sparse-text page segmentation (PSM 11) instead of PSM 3 | 219 / 11 / 71 — *rejected*, see below |
 | Second colour OCR pass unioned with the first | 149 / 7 / 44 for 2× the latency — *rejected* |
+
+PSM 11 is worth describing because it looks like a win and is not. It reads
+*more* rows off the poor 2020–2022 scans — the 2022 statements stop failing
+outright and yield 7/17 and 10/23 fields — but the extra rows are unreliable, so
+the totals they feed no longer reconcile: balance-sheet components summed to
+386,955 against a reported 1,799,506, and the P&L read the same figure as both
+current and brought-forward profit. Those are **false** `FAIL`s, claiming a
+document disagrees with itself when it does not, which is worse than an honest
+`NOT_APPLICABLE`. It also halves invoice accuracy (29 → 15 PASS, 2 → 8 FAIL),
+since receipts are dense single-column text that full page segmentation handles
+better. Setting the mode per document type would recover the cash-flow gain, but
+tuning a parameter per type against ten documents each is the over-fitting this
+benchmark exists to catch, so PSM 3 stands everywhere.
 
 ## Known limitations
 
