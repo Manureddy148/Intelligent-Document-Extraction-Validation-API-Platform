@@ -750,3 +750,37 @@ def test_a_real_tax_line_survives():
     assert ctx.tax_amount == 6.0
     check = next(c for c in result.checks if c.name == "invoice_total_check")
     assert check.status == ValidationStatus.PASS
+
+
+def test_items_found_without_a_table_header_are_not_reconciled():
+    """Heuristic row matching cannot tell a complete list from a partial one."""
+    ctx = parse_invoice([
+        (1, "99 SPEED MART"),
+        (1, "COKE LIGHT 500ML"),
+        (1, "1x 2.20 2.20"),
+        (1, "Total Sales RM 26.33"),
+    ])
+    assert ctx.line_items
+    assert ctx.line_items_incomplete is True
+
+
+def test_items_found_inside_a_table_region_stay_reconcilable():
+    ctx = parse_invoice([
+        (1, "ITEM DESCRIPTION QTY PRICE AMOUNT"),
+        (1, "Widget 2 5.00 10.00"),
+        (1, "Total 10.00"),
+    ])
+    assert ctx.line_items
+    assert ctx.line_items_incomplete is False
+
+
+def test_cash_below_the_total_is_discarded_rather_than_returning_negative_change():
+    from app.utils.invoice_parsing import InvoiceContext
+
+    ctx = InvoiceContext()
+    ctx.cash_paid, ctx.total_amount, ctx.change = 20.00, 20.05, 29.95
+    outcome = ExtractionOutcome({}, ["current"], True, 1, {}, ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+    assert ctx.cash_paid is None
+    check = next((c for c in result.checks if c.name == "cash_change_check"), None)
+    assert check is None or check.status == ValidationStatus.NOT_APPLICABLE

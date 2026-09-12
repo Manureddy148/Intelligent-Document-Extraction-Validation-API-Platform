@@ -293,6 +293,14 @@ class FinancialValidationService:
                 logger.info("Discarding %s=%s: it is not less than the total of %s", field, value, total)
                 setattr(ctx, field, None)
 
+        # A completed sale cannot tender less than the bill and return change,
+        # so cash below the total means one of the two was misread. Subtracting
+        # them anyway would report a negative change as a discrepancy in the
+        # receipt rather than in the reading.
+        if isinstance(ctx.cash_paid, (int, float)) and ctx.cash_paid < total:
+            logger.info("Discarding cash_paid=%s: below the total of %s", ctx.cash_paid, total)
+            ctx.cash_paid = None
+
     def _validate_balance_sheet(self, outcome: ExtractionOutcome) -> list[ValidationCheck]:
         checks: list[ValidationCheck] = []
         for period in outcome.periods:

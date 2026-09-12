@@ -638,6 +638,14 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]], rows: list | None = N
         ctx.customer_name = name
         ctx.record("customer_name", lines_with_pages[row_index][0], lines[row_index])
 
+    # Without a column header there is no bounded item table, so the rows that
+    # matched a line-item shape are whatever the heuristics happened to catch -
+    # there is no way to tell a complete list from a partial one. Summing that
+    # against a printed subtotal would report a shortfall belonging to the
+    # reading. Rows found inside a real table region stay reconcilable.
+    if ctx.line_items and table_region is None:
+        ctx.line_items_incomplete = True
+
     if ctx.tax_inclusive is None and ctx.tax_amount is not None and ctx.subtotal is None:
         ctx.tax_inclusive = True
 

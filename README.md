@@ -463,7 +463,7 @@ file is fine only for a quick look.
 ## Testing
 
 ```bash
-cd backend && pytest            # 83 tests
+cd backend && pytest            # 94 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size
@@ -506,21 +506,25 @@ pass enabled.
 
 | Document type | Docs | PASS | FAIL | NOT_APPLICABLE |
 | --- | --- | --- | --- | --- |
-| Balance sheet | 10 | 49 | 0 | 11 |
+| Balance sheet | 10 | 46 | 0 | 14 |
 | Profit & loss | 10 | 96 | 0 | 4 |
 | Cash flow | 10 | 37 | 0 | 3 |
-| Invoice | 20 | 29 | 2 | 25 |
-| **Total** | **50** | **261** | **2** | **43** |
+| Invoice | 20 | 53 | 5 | 27 |
+| **Total** | **50** | **282** | **5** | **48** |
 
-The vision pass turns 29 `NOT_APPLICABLE` results into reconciled checks, and
+The vision pass turns 24 `NOT_APPLICABLE` results into reconciled checks, reads
+the invoice item tables the parser cannot, and
 all 50 documents reach `processing_status: PASS` — including the two 2022
 statements that the deterministic path cannot read at all. The 2022 balance
 sheet goes from 4 of 17 fields to 17 of 18, and its components reconcile to the
 reported total exactly. Field coverage rises across the invoices too, typically
 from 2–8 fields to 10–15. Every statement check that can be evaluated now
-passes, and the only two failures left in the whole dataset are the genuine
-document discrepancies described above. The cost is latency: a median of 9.0 s
-against 2.1 s, since a document with missing fields makes one extra call.
+passes. Three of the five remaining failures are the genuine document
+discrepancies described above; the other two are OCR misreads of a cash or tax
+figure, each reported with the source line so they can be checked against the
+page. The cost is latency: a median of 11.2 s against 2.1 s, since a document
+with missing fields makes one extra call, and an invoice with no parsed items
+makes a second to read its table.
 
 The numbers below describe the deterministic path, which is what runs without a
 key.
