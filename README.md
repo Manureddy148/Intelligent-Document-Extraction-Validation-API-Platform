@@ -467,6 +467,11 @@ use the managed database so processed results survive a restart.
    is live, check `/api/v1/health` — it reports whether the database and the OCR
    engine are both reachable, and returns 503 if the database is not.
 
+**Free instances sleep.** Render suspends a free web service after about 15
+minutes of inactivity, and the next request waits roughly a minute while it
+wakes. Open the dashboard URL a minute before a demo or review so the first
+click is not the cold start.
+
 The frontend needs no separate deployment: the same service serves the dashboard
 at `/`, the API under `/api/v1/`, and Swagger at `/docs`.
 
