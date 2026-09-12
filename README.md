@@ -407,6 +407,27 @@ SQLite by default; set `IDEV_DATABASE_URL` to a Postgres/MySQL URL for
 deployment — no code change, and `postgres://` URLs from managed providers are
 rewritten to the driver form SQLAlchemy 2 expects.
 
+**Use Postgres for a deployment, not SQLite.** The case study allows either
+("SQLite, PostgreSQL, MySQL or an equivalent option") but requires that
+processed results "remain available during evaluation", and free instances on
+Render and Cloud Run have ephemeral filesystems — a SQLite file is lost on every
+restart and redeploy. `render.yaml` provisions Postgres and wires
+`IDEV_DATABASE_URL` to it automatically.
+
+The Postgres path was verified against a real PostgreSQL 16 server rather than
+assumed, using the `postgres://` URL form Render hands out:
+
+| Check | Result |
+| --- | --- |
+| Schema created on first start | `processed_documents` table created automatically |
+| All four document types processed | every one `PASS`, validation `PASS` |
+| Health endpoint | reports `"database": "ok"` |
+| Non-Latin document names | `发票🧾.jpg` stored and retrieved intact |
+| Upsert by name | the same name uploaded three times leaves one row |
+| Full JSON round-trip | per-period values, evidence and all checks returned unchanged |
+| **Survives a restart** | a fresh instance with no shared filesystem still listed every document and returned complete results |
+| 17 concurrent uploads | all `200`, no deadlocks, one row for the contended name |
+
 ## Deployment
 
 Both frontend and API are one FastAPI app, so a single service covers both.
