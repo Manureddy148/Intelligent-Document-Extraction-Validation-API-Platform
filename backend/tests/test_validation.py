@@ -80,3 +80,20 @@ def test_safe_document_name_normalises_hostile_names():
     # A legitimate name, including non-Latin script, is left alone.
     assert safe_document_name("Consolidated Balance Sheet 2017.pdf") == "Consolidated Balance Sheet 2017.pdf"
     assert safe_document_name("发票.pdf") == "发票.pdf"
+
+
+def test_every_field_a_check_reads_is_treated_as_material():
+    """The vision pass is skipped when no "material" field is missing. If that
+    list ever falls behind the checks, a document silently loses its recovery."""
+    import re
+    from pathlib import Path
+
+    from app.services.document_service import _MATERIAL_FIELDS
+
+    source = Path("app/services/financial_validation_service.py").read_text()
+    consumed = set(re.findall(r'_value\(outcome, "([a-z_]+)"', source))
+    for group in re.findall(r"_(?:LIABILITY|ASSET)_COMPONENTS = \(([^)]*)\)", source, re.S):
+        consumed |= set(re.findall(r'"([a-z_]+)"', group))
+
+    covered = set().union(*_MATERIAL_FIELDS.values())
+    assert not consumed - covered, f"checks read fields the gate ignores: {sorted(consumed - covered)}"

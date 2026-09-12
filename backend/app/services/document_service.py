@@ -11,6 +11,7 @@ from app.schemas.extraction import (
     ProcessingMetadata,
     ProcessingResult,
     ProcessingStatus,
+    ValidationStatus,
 )
 from app.services.document_validation_service import DocumentValidationService
 from app.services.extraction_service import ExtractionService
@@ -28,6 +29,40 @@ _KEY_FIELDS: dict[DocumentType, tuple[str, ...]] = {
     DocumentType.BALANCE_SHEET: ("total_assets", "total_liabilities"),
     DocumentType.PROFIT_AND_LOSS: ("total_income", "total_expenditure"),
     DocumentType.CASH_FLOW_STATEMENT: ("operating_cash_flow", "net_change_in_cash", "closing_cash"),
+}
+
+
+# Fields worth spending a model call on: the ones the financial checks consume,
+# plus the minimum set the case study names per document type. A null anywhere
+# else - a currency symbol, a unit label, a line this statement format simply
+# does not carry - is not worth ~9s and a network round trip, and asking for it
+# alone made a cleanly extracted statement as slow as an unreadable one.
+_MATERIAL_FIELDS: dict[DocumentType, frozenset[str]] = {
+    DocumentType.INVOICE: frozenset({
+        "invoice_number", "invoice_date", "vendor_name", "customer_name",
+        "subtotal", "tax_amount", "total_amount", "cash_paid", "change",
+    }),
+    DocumentType.BALANCE_SHEET: frozenset({
+        "total_assets", "total_liabilities",
+        "capital", "reserves_and_surplus", "minority_interest", "deposits",
+        "borrowings", "other_liabilities_and_provisions",
+        "cash_and_balances_with_central_bank", "balances_with_banks",
+        "investments", "advances", "fixed_assets", "other_assets",
+        "goodwill_on_consolidation",
+    }),
+    DocumentType.PROFIT_AND_LOSS: frozenset({
+        "interest_earned", "other_income", "total_income",
+        "interest_expended", "operating_expenses", "provisions_and_contingencies",
+        "total_expenditure", "net_profit_for_the_year", "minority_interest",
+        "share_in_profits_of_associates", "consolidated_profit_attributable_to_group",
+        "brought_forward_profit", "addition_on_amalgamation",
+        "total_available_for_appropriation",
+    }),
+    DocumentType.CASH_FLOW_STATEMENT: frozenset({
+        "operating_cash_flow", "investing_cash_flow", "financing_cash_flow",
+        "fx_translation_adjustment", "net_change_in_cash", "opening_cash",
+        "closing_cash", "cash_on_amalgamation_adjustment",
+    }),
 }
 
 
@@ -71,9 +106,15 @@ class DocumentService:
 
         outcome = self.extraction_service.extract(pages, document_type)
 
-        llm_assisted = self._recover_missing_fields(
-            pages, outcome, document_type, content, file_validation.file_type
+        # Rasterising a page costs a second or two, so it is done once here and
+        # shared by both model passes rather than repeated by each.
+        page_images = (
+            self.ocr_service.render_page_images(content, file_validation.file_type)
+            if self.llm_service.provider == "gemini"
+            else []
         )
+        llm_assisted = self._recover_missing_fields(pages, outcome, document_type, page_images)
+        llm_assisted |= self._reread_failing_operands(outcome, document_type, page_images)
 
         validation_summary = self.financial_validation_service.validate(document_type, outcome)
 
@@ -120,9 +161,7 @@ class DocumentService:
         )
         return result_dict
 
-    def _recover_missing_fields(
-        self, pages, outcome, document_type: DocumentType, content: bytes, file_type: str
-    ) -> bool:
+    def _recover_missing_fields(self, pages, outcome, document_type: DocumentType, page_images) -> bool:
         """Use the optional LLM pass to fill fields the rule-based extractor left null.
 
         Only fields still null after the deterministic pass are asked about, so a
@@ -137,36 +176,111 @@ class DocumentService:
             for key, field in outcome.extracted_data.items()
             if isinstance(field, dict) and "value" in field and field.get("value") is None
         ]
-        if not missing:
+        needs_items = document_type == DocumentType.INVOICE and not outcome.extracted_data.get("line_items")
+        # Spend a model call only when something that matters is missing, or an
+        # invoice has no item table at all. A null currency symbol or a line this
+        # statement format does not carry is not worth ~9s and a round trip, and
+        # asking for those alone made a cleanly extracted statement as slow as an
+        # unreadable one.
+        material = _MATERIAL_FIELDS.get(document_type, frozenset())
+        worth_asking = [key for key in missing if key in material] if material else missing
+        if not worth_asking and not needs_items:
+            if missing:
+                logger.info("Skipping the vision pass: only %s missing, none material", ", ".join(sorted(missing)))
             return False
 
         document_text = "\n".join(f"--- page {page.page_number} ---\n{page.text}" for page in pages)
-        page_images = (
-            self.ocr_service.render_page_images(content, file_type)
-            if self.llm_service.provider == "gemini"
-            else []
-        )
-
-        started = time.perf_counter()
-        # An invoice carries one figure per field; "current" is only a sentinel
-        # that lets the validation loop share a shape with the statements. Asking
-        # the model for values per period would return {"current": 126.27} where
-        # the deterministic path returns 126.27.
-        periods = [] if document_type == DocumentType.INVOICE else outcome.periods
-        recovered = self.llm_service.recover_missing_fields(
-            document_text, document_type.value, missing, page_images, periods
-        )
-        logger.info(
-            "LLM recovery pass (%s) filled %s of %s missing fields in %sms",
-            self.llm_service.provider, len(recovered), len(missing),
-            int((time.perf_counter() - started) * 1000),
-        )
-        for key, field in recovered.items():
-            outcome.extracted_data[key] = field
-        self._apply_to_invoice_context(outcome, document_type, recovered)
+        recovered: dict = {}
+        if missing and worth_asking:
+            started = time.perf_counter()
+            # An invoice carries one figure per field; "current" is only a sentinel
+            # that lets the validation loop share a shape with the statements. Asking
+            # the model for values per period would return {"current": 126.27} where
+            # the deterministic path returns 126.27.
+            periods = [] if document_type == DocumentType.INVOICE else outcome.periods
+            recovered = self.llm_service.recover_missing_fields(
+                document_text, document_type.value, missing, page_images, periods
+            )
+            logger.info(
+                "LLM recovery pass (%s) filled %s of %s missing fields in %sms",
+                self.llm_service.provider, len(recovered), len(missing),
+                int((time.perf_counter() - started) * 1000),
+            )
+            for key, field in recovered.items():
+                outcome.extracted_data[key] = field
+            self._apply_to_invoice_context(outcome, document_type, recovered)
 
         recovered_items = self._recover_line_items(outcome, document_type, page_images)
         return bool(recovered) or recovered_items
+
+    def _reread_failing_operands(self, outcome, document_type: DocumentType, page_images) -> bool:
+        """Re-read the inputs of a failed check straight off the page.
+
+        A check that does not reconcile has two possible causes: the document
+        really does not add up, or one of the figures was misread. They are
+        indistinguishable from the numbers alone, and the deterministic pass
+        never asks about a field it already filled - so a confidently misread
+        cash or tax figure is reported as the document contradicting itself.
+
+        Asking the page settles it. The re-read is only accepted when the model
+        returns a *different* value grounded in a source line **and** the check
+        then reconciles; if it confirms what was read, the failure stands. A
+        document that genuinely does not add up cannot be re-read into
+        agreement, so real discrepancies survive this.
+        """
+        if not page_images or self.llm_service.provider != "gemini":
+            return False
+
+        summary = self.financial_validation_service.validate(document_type, outcome)
+        failed = [check for check in summary.checks if check.status == ValidationStatus.FAIL]
+        if not failed:
+            return False
+        passing_before = sum(c.status == ValidationStatus.PASS for c in summary.checks)
+
+        suspect = sorted({
+            name
+            for check in failed
+            for name, value in check.operands.items()
+            if value is not None and name in outcome.extracted_data
+        })
+        if not suspect:
+            return False
+
+        logger.info("Re-reading %s against the page after %s failed check(s)", ", ".join(suspect), len(failed))
+        periods = [] if document_type == DocumentType.INVOICE else outcome.periods
+        reread = self.llm_service.recover_missing_fields("", document_type.value, suspect, page_images, periods)
+        if not reread:
+            return False
+
+        before = {key: outcome.extracted_data.get(key) for key in suspect}
+        changed = {
+            key: field for key, field in reread.items()
+            if (before.get(key) or {}).get("value") != field.get("value")
+        }
+        if not changed:
+            logger.info("The page confirms the figures as read; the discrepancy stands")
+            return False
+
+        for key, field in changed.items():
+            outcome.extracted_data[key] = field
+        self._apply_to_invoice_context(outcome, document_type, changed)
+
+        after = self.financial_validation_service.validate(document_type, outcome)
+        # The test is that a check now *passes*, not merely that it stopped
+        # failing: a re-read that contradicts another figure can push a check
+        # into NOT_APPLICABLE, which removes a failure without explaining it.
+        if sum(c.status == ValidationStatus.PASS for c in after.checks) > passing_before:
+            logger.info("Re-reading %s resolved a discrepancy", ", ".join(changed))
+            return True
+
+        # No improvement: the re-read was not the explanation, so keep what the
+        # deterministic pass read rather than swapping in an unverified figure.
+        for key, field in before.items():
+            if field is not None:
+                outcome.extracted_data[key] = field
+        self._apply_to_invoice_context(outcome, document_type, {k: v for k, v in before.items() if v})
+        logger.info("Re-read did not reconcile the check; keeping the original reading")
+        return False
 
     def _apply_to_invoice_context(self, outcome, document_type: DocumentType, recovered: dict) -> None:
         """Mirror recovered invoice figures onto the context the checks read.

@@ -233,3 +233,71 @@ def test_recovered_tax_cannot_exceed_the_amount_payable():
     )
     assert ctx.tax_amount is None      # cannot be the whole bill
     assert ctx.subtotal == 105.0       # legitimately below it
+
+
+def test_reread_is_rejected_when_it_does_not_reconcile_the_check():
+    """A document that genuinely does not add up must not be re-read into
+    agreement: the original reading is restored and the failure stands."""
+    from app.services.document_service import DocumentService
+    from app.schemas.extraction import DocumentType
+    from app.services.extraction_service import ExtractionOutcome
+    from app.services.financial_validation_service import FinancialValidationService
+    from app.services.llm_extraction_service import LlmExtractionService
+    from app.utils.invoice_parsing import InvoiceContext
+    from app.core.config import Settings
+
+    service = DocumentService.__new__(DocumentService)
+    settings = Settings(gemini_api_key="k")
+    service.llm_service = LlmExtractionService(settings)
+    service.financial_validation_service = FinancialValidationService(settings)
+    # The model answers with a different-but-still-irreconcilable figure.
+    service.llm_service.recover_missing_fields = lambda *a, **k: {
+        "total_amount": {"value": 999.0, "page_number": 1, "source_text": "Total 999.00"}
+    }
+
+    ctx = InvoiceContext()
+    ctx.cash_paid, ctx.total_amount, ctx.change = 150.0, 106.5, 41.5
+    outcome = ExtractionOutcome(
+        {"total_amount": {"value": 106.5, "page_number": 1, "source_text": "Total 106.50"}},
+        ["current"], True, 1, {}, ctx,
+    )
+    assert service._reread_failing_operands(outcome, DocumentType.INVOICE, [b"png"]) is False
+    # original reading restored, not the model's unverified one
+    assert outcome.extracted_data["total_amount"]["value"] == 106.5
+
+
+def test_reread_is_accepted_when_it_makes_a_check_reconcile():
+    """A misread figure the page contradicts should be corrected."""
+    from app.services.document_service import DocumentService
+    from app.schemas.extraction import DocumentType
+    from app.services.extraction_service import ExtractionOutcome
+    from app.services.financial_validation_service import FinancialValidationService
+    from app.services.llm_extraction_service import LlmExtractionService
+    from app.utils.invoice_parsing import InvoiceContext
+    from app.core.config import Settings
+
+    service = DocumentService.__new__(DocumentService)
+    settings = Settings(gemini_api_key="k")
+    service.llm_service = LlmExtractionService(settings)
+    service.financial_validation_service = FinancialValidationService(settings)
+    # OCR read the cash tendered as 28.00; the page actually shows 37.90.
+    service.llm_service.recover_missing_fields = lambda *a, **k: {
+        "cash_paid": {
+            "value": 37.90, "page_number": 1,
+            "source_text": "CASH RM 37.90", "extraction_method": "llm_assisted",
+        }
+    }
+
+    ctx = InvoiceContext()
+    ctx.cash_paid, ctx.total_amount, ctx.change = 28.00, 27.90, 10.00
+    outcome = ExtractionOutcome(
+        {
+            "cash_paid": {"value": 28.00, "page_number": 1, "source_text": "CASH RM 28.00"},
+            "total_amount": {"value": 27.90, "page_number": 1, "source_text": "Total 27.90"},
+            "change": {"value": 10.00, "page_number": 1, "source_text": "CHANGE RM 10.00"},
+        },
+        ["current"], True, 1, {}, ctx,
+    )
+    assert service._reread_failing_operands(outcome, DocumentType.INVOICE, [b"png"]) is True
+    assert outcome.extracted_data["cash_paid"]["value"] == 37.90
+    assert outcome.extracted_data["cash_paid"]["extraction_method"] == "llm_assisted"

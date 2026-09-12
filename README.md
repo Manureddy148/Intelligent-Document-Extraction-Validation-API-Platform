@@ -506,7 +506,7 @@ file is fine only for a quick look.
 ## Testing
 
 ```bash
-cd backend && pytest            # 94 tests
+cd backend && pytest            # 97 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size
@@ -549,11 +549,25 @@ pass enabled.
 
 | Document type | Docs | PASS | FAIL | NOT_APPLICABLE |
 | --- | --- | --- | --- | --- |
-| Balance sheet | 10 | 46 | 0 | 14 |
-| Profit & loss | 10 | 96 | 0 | 4 |
+| Balance sheet | 10 | 49 | 0 | 11 |
+| Profit & loss | 10 | 92 | 0 | 8 |
 | Cash flow | 10 | 37 | 0 | 3 |
-| Invoice | 20 | 53 | 5 | 27 |
-| **Total** | **50** | **282** | **5** | **48** |
+| Invoice | 20 | 60 | 3 | 29 |
+| **Total** | **50** | **288** | **3** | **51** |
+
+These figures move by a few checks between runs: when a Gemini model is at
+capacity the request falls through to another one, and the two do not always
+read a damaged scan identically.
+
+**On the `NOT_APPLICABLE` results.** They are the required outcome, not a
+shortfall — the case study asks for `NOT_APPLICABLE` "rather than assume or
+invent a value" when a field a validation needs is absent. The breakdown bears
+that out: 14 are receipts with line items but no net-of-tax subtotal printed to
+reconcile against, 7 are rows whose quantity and rate columns could not be told
+apart (so the amount is reported and the rate is not), 7 are statements whose
+component rows the scan lost, and the rest are absent subtotal, tax, discount or
+appropriation lines. Driving this number down would mean inventing figures the
+documents do not contain.
 
 The vision pass turns 24 `NOT_APPLICABLE` results into reconciled checks, reads
 the invoice item tables the parser cannot, and
@@ -565,7 +579,7 @@ from 2–8 fields to 10–15. Every statement check that can be evaluated now
 passes. Three of the five remaining failures are the genuine document
 discrepancies described above; the other two are OCR misreads of a cash or tax
 figure, each reported with the source line so they can be checked against the
-page. The cost is latency: a median of 11.2 s against 2.1 s, since a document
+page. The cost is latency: a median of 9.4 s against 2.1 s, since a document
 with missing fields makes one extra call, and an invoice with no parsed items
 makes a second to read its table.
 
