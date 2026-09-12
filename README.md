@@ -261,7 +261,18 @@ Failures return the same envelope with an appropriate status code:
 | `EXTRACTION_FAILED` | 422 |
 | `INTERNAL_ERROR` | 500 |
 
-Stack traces are never returned to the caller; they go to the application log.
+| `INVALID_REQUEST` | 422 |
+| `NOT_FOUND`, `METHOD_NOT_ALLOWED` | 404 / 405 |
+
+Every failure uses this one envelope, including the framework's own: FastAPI's
+request-validation errors and Starlette's 404 for an unrouted path are both
+translated, so a client never has to parse a second error shape. Stack traces
+are never returned to the caller; they go to the application log.
+
+An uploaded file name is chosen entirely by the caller and becomes a database
+key and part of a URL, so it is reduced to a plain base name first:
+`../../../etc/passwd` is stored as `passwd`, control characters are removed and
+the length is bounded. Non-Latin names are preserved as they are.
 Worked examples of every case are in [`sample_outputs/`](sample_outputs/).
 
 ## Frontend
@@ -452,7 +463,7 @@ file is fine only for a quick look.
 ## Testing
 
 ```bash
-cd backend && pytest            # 79 tests
+cd backend && pytest            # 83 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size

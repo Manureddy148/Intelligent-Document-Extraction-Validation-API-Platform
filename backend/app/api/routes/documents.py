@@ -8,6 +8,7 @@ from app.core.logging import get_logger
 from app.schemas.document import DocumentListResponse, DocumentSummary
 from app.schemas.extraction import DocumentType, ErrorResponse, ProcessingResult
 from app.services.document_service import DocumentService
+from app.utils.filenames import safe_document_name
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 logger = get_logger(__name__)
@@ -42,7 +43,11 @@ async def process_document(
 ) -> ProcessingResult:
     content = await file.read()
     service = DocumentService(db, settings)
-    return service.process(filename=file.filename or "document", content=content, document_type=document_type)
+    # The caller chooses this name and it becomes a database key and part of a
+    # URL, so it is reduced to a plain base name first.
+    return service.process(
+        filename=safe_document_name(file.filename), content=content, document_type=document_type
+    )
 
 
 @router.get(

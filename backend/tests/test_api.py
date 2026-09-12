@@ -143,3 +143,47 @@ def test_unsupported_type_is_detected_from_content_not_extension(client):
     )
     assert response.status_code == 415
     assert response.json()["error"]["code"] == "UNSUPPORTED_FILE_TYPE"
+
+
+def test_uploaded_file_names_are_reduced_to_a_base_name(client, blank_pdf_bytes):
+    """The caller picks this name and it becomes a database key and a URL."""
+    response = client.post(
+        "/api/v1/documents/process",
+        files={"file": ("../../../etc/passwd", blank_pdf_bytes, "application/pdf")},
+        data={"document_type": "invoice"},
+    )
+    assert response.status_code == 200
+    assert response.json()["document_name"] == "passwd"
+
+
+def test_every_error_uses_one_envelope(client):
+    """A client must not have to parse two error shapes."""
+    # FastAPI request validation
+    invalid = client.post(
+        "/api/v1/documents/process",
+        files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")},
+        data={"document_type": "not_a_type"},
+    )
+    assert invalid.status_code == 422
+    assert set(invalid.json()["error"]) == {"code", "message"}
+
+    # Starlette's own 404 for a path that matches no route
+    unrouted = client.get("/api/v1/nope")
+    assert unrouted.status_code == 404
+    assert unrouted.json()["error"]["code"] == "NOT_FOUND"
+
+    # An application error
+    missing = client.get("/api/v1/documents/never-processed.pdf")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "DOCUMENT_NOT_FOUND"
+
+
+def test_reprocessing_a_name_replaces_rather_than_duplicates(client, blank_pdf_bytes):
+    for _ in range(3):
+        client.post(
+            "/api/v1/documents/process",
+            files={"file": ("repeat.pdf", blank_pdf_bytes, "application/pdf")},
+            data={"document_type": "invoice"},
+        )
+    listing = client.get("/api/v1/documents?limit=100").json()
+    assert [d["document_name"] for d in listing["documents"]].count("repeat.pdf") == 1

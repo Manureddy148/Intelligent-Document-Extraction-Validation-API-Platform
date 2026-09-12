@@ -65,3 +65,18 @@ def test_rejects_oversized_upload(validation_service):
     oversized = b"%PDF-1.4" + b"0" * (get_settings().max_upload_size_mb * 1024 * 1024 + 1)
     with pytest.raises(FileTooLargeError):
         validation_service.validate("huge.pdf", oversized)
+
+
+def test_safe_document_name_normalises_hostile_names():
+    from app.utils.filenames import safe_document_name
+
+    assert safe_document_name("../../../etc/passwd") == "passwd"
+    assert safe_document_name("C:\\Windows\\system32\\x.pdf") == "x.pdf"
+    assert safe_document_name("a\x00b.pdf") == "ab.pdf"
+    assert safe_document_name("") == "document"
+    assert safe_document_name(None) == "document"
+    assert safe_document_name("....") == "document"
+    assert len(safe_document_name("A" * 600 + ".pdf")) <= 200
+    # A legitimate name, including non-Latin script, is left alone.
+    assert safe_document_name("Consolidated Balance Sheet 2017.pdf") == "Consolidated Balance Sheet 2017.pdf"
+    assert safe_document_name("发票.pdf") == "发票.pdf"

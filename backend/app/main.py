@@ -3,6 +3,8 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -61,6 +63,44 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": {"code": exc.code, "message": exc.message}},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Report request-validation failures in the same envelope as every other error.
+
+    FastAPI's default is a bare {"detail": [...]} list, which would make a client
+    parse two different error shapes depending on which layer rejected it.
+    """
+    problems = "; ".join(
+        f"{'.'.join(str(part) for part in error.get('loc', [])[1:]) or 'request'}: {error.get('msg', 'invalid')}"
+        for error in exc.errors()
+    )
+    logger.warning("Rejected malformed request to %s: %s", request.url.path, problems)
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"code": "INVALID_REQUEST", "message": problems or "The request was not valid."}},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Starlette's own errors (404 on an unrouted path, 405) in the same envelope.
+
+    Registered against Starlette's class, not FastAPI's subclass: an unmatched
+    route is raised by the router as the former, so handling only the latter
+    leaves a bare {"detail": "Not Found"} as the one inconsistent response.
+    """
+    codes = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED", 413: "FILE_TOO_LARGE"}
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": codes.get(exc.status_code, "REQUEST_FAILED"),
+                "message": exc.detail if isinstance(exc.detail, str) else "The request could not be completed.",
+            }
+        },
     )
 
 
