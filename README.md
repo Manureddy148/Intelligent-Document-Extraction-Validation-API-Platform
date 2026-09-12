@@ -506,7 +506,7 @@ file is fine only for a quick look.
 ## Testing
 
 ```bash
-cd backend && pytest            # 97 tests
+cd backend && pytest            # 100 tests
 ```
 
 Covering file validation (type sniffing, empty, corrupted, page limit, size
@@ -552,8 +552,8 @@ pass enabled.
 | Balance sheet | 10 | 49 | 0 | 11 |
 | Profit & loss | 10 | 92 | 0 | 8 |
 | Cash flow | 10 | 37 | 0 | 3 |
-| Invoice | 20 | 60 | 3 | 29 |
-| **Total** | **50** | **288** | **3** | **51** |
+| Invoice | 20 | 61 | 2 | 27 |
+| **Total** | **50** | **289** | **2** | **49** |
 
 These figures move by a few checks between runs: when a Gemini model is at
 capacity the request falls through to another one, and the two do not always
@@ -579,7 +579,7 @@ from 2–8 fields to 10–15. Every statement check that can be evaluated now
 passes. Three of the five remaining failures are the genuine document
 discrepancies described above; the other two are OCR misreads of a cash or tax
 figure, each reported with the source line so they can be checked against the
-page. The cost is latency: a median of 9.4 s against 2.1 s, since a document
+page. The cost is latency: a median of 10.3 s against 2.1 s, since a document
 with missing fields makes one extra call, and an invoice with no parsed items
 makes a second to read its table.
 

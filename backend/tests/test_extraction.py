@@ -784,3 +784,40 @@ def test_cash_below_the_total_is_discarded_rather_than_returning_negative_change
     assert ctx.cash_paid is None
     check = next((c for c in result.checks if c.name == "cash_change_check"), None)
     assert check is None or check.status == ValidationStatus.NOT_APPLICABLE
+
+
+def test_shipping_charge_is_extracted_and_counted_in_the_total():
+    """An invoice with S&H was reported as not adding up because the formula
+    knew only about subtotal, tax and discount."""
+    ctx = parse_invoice([
+        (1, "Subtotal 804"),
+        (1, "Sales Tax 8% 63.47"),
+        (1, "S&H 50"),
+        (1, "Total Due 916.47"),
+    ])
+    assert (ctx.subtotal, ctx.tax_amount, ctx.additional_charges, ctx.total_amount) == (
+        804.0, 63.47, 50.0, 916.47
+    )
+    outcome = ExtractionOutcome({}, ["current"], True, 1, {}, ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+    check = next(c for c in result.checks if c.name == "invoice_total_check")
+    assert check.status == ValidationStatus.PASS
+
+
+def test_a_freight_line_item_is_not_read_as_a_shipping_charge():
+    ctx = parse_invoice([
+        (1, "Freight AE Blake Montreal to Aerospace Metal"),
+        (1, "03 6 136.00 136.00"),
+    ])
+    assert ctx.additional_charges is None
+
+
+def test_a_split_decimal_is_not_read_as_a_whole_number():
+    """OCR renders "4.60" as "TOTAL. 4. 60"; reading the trailing group alone
+    turned a RM 4.60 bill into RM 60."""
+    from app.utils.invoice_parsing import _labelled_amount
+
+    assert _labelled_amount("TOTAL. 4. 60") is None
+    assert _labelled_amount("Subtotal 804") == 804.0
+    assert _labelled_amount("S&H 50") == 50.0
+    assert _labelled_amount("Total Due 916.47") == 916.47

@@ -221,9 +221,20 @@ class FinancialValidationService:
             checks.append(
                 self._compare(
                     name="invoice_total_check",
-                    formula="subtotal + tax_amount - discount ≈ total_amount",
-                    operands={"subtotal": ctx.subtotal, "tax_amount": ctx.tax_amount, "discount": ctx.discount},
-                    calculated=round(ctx.subtotal + ctx.tax_amount - (ctx.discount or 0.0), 2),
+                    formula="subtotal + tax_amount + additional_charges - discount ≈ total_amount",
+                    operands={
+                        "subtotal": ctx.subtotal,
+                        "tax_amount": ctx.tax_amount,
+                        # Shipping, handling or a service charge sits between the
+                        # subtotal and the total on many invoices; leaving it out
+                        # reported a shortfall the document does not have.
+                        "additional_charges": ctx.additional_charges,
+                        "discount": ctx.discount,
+                    },
+                    calculated=round(
+                        ctx.subtotal + ctx.tax_amount + (ctx.additional_charges or 0.0)
+                        - (ctx.discount or 0.0), 2
+                    ),
                     reported=ctx.total_amount,
                 )
             )

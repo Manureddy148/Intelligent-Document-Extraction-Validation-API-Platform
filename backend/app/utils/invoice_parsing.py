@@ -109,6 +109,17 @@ _TAX_LABEL_RE = re.compile(
 
 _TOTAL_EXCLUSIONS = ("qty", "quantity", "item", "count", "summary")
 
+# Charges added between the subtotal and the total - shipping, handling, service
+# charge, rounding. Without these the total check reports a shortfall on any
+# invoice that carries one. Matched only as a short label-and-amount line in the
+# totals block, so an item row such as "Freight AE Blake Montreal to Aerospace
+# Metal 6 136.00" is not mistaken for a shipping charge.
+_ADDITIONAL_CHARGE_RE = re.compile(
+    r"^\W*(?:s\s*&\s*h|shipping(?:\s*(?:&|and)\s*handling)?|handling|freight|delivery"
+    r"|service\s*charge|svc\s*charge|rounding(?:\s*adj\w*)?)\b[^A-Za-z]*$",
+    re.IGNORECASE,
+)
+
 # "GST @6% included in total RM 0.35" states the tax, not the total. Reading it
 # as the total replaces a RM 6.20 bill with RM 0.35 and makes the change due
 # look wrong by the whole value of the sale.
@@ -233,6 +244,30 @@ def _last_money(line: str) -> float | None:
     return values[-1] if values else None
 
 
+_TRAILING_INTEGER_RE = re.compile(rf"(?:{_CURRENCY}\s*)?(-?\d[\d,]*)\s*$", re.IGNORECASE)
+
+
+def _labelled_amount(line: str) -> float | None:
+    """The amount on a totals-block line, allowing a whole number.
+
+    Invoices print round figures without decimals - "Subtotal 804", "S&H 50" -
+    which the money pattern deliberately ignores, because a bare integer
+    anywhere else on a receipt is far more likely to be a quantity or an item
+    code. It is only read here, where the line's own label already says the
+    trailing number is an amount.
+    """
+    value = _last_money(line)
+    if value is not None:
+        return value
+    # Only when the line carries a single number. OCR splits decimals into two
+    # groups - "TOTAL. 4. 60" is 4.60, not 60 - and there is no way to tell that
+    # from a genuine whole number, so an ambiguous line is left unread.
+    if len(re.findall(r"\d+", line)) != 1:
+        return None
+    match = _TRAILING_INTEGER_RE.search(line.strip())
+    return _parse_money(match.group(1)) if match else None
+
+
 @dataclass
 class InvoiceLineItem:
     description: str
@@ -261,6 +296,7 @@ class InvoiceContext:
     tax_rate_percent: float | None = None
     tax_inclusive: bool | None = None
     discount: float | None = None
+    additional_charges: float | None = None
     total_amount: float | None = None
     total_quantity: float | None = None
     cash_paid: float | None = None
@@ -514,10 +550,18 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]], rows: list | None = N
 
         is_subtotal_line = bool(_SUBTOTAL_LABEL_RE.search(line))
         if is_subtotal_line:
-            value = _last_money(line)
+            value = _labelled_amount(line)
             if value is not None:
                 ctx.subtotal = value
                 ctx.record("subtotal", page_number, line)
+
+        if ctx.additional_charges is None:
+            label = _ADDITIONAL_CHARGE_RE.match(line)
+            if label:
+                value = _labelled_amount(line)
+                if value is not None and value > 0:
+                    ctx.additional_charges = value
+                    ctx.record("additional_charges", page_number, line)
 
         if "discount" in lowered:
             value = _last_money(line)
@@ -535,7 +579,7 @@ def parse_invoice(lines_with_pages: list[tuple[int, str]], rows: list | None = N
             and not _TAX_LINE_LEAD_RE.match(line)
             and not any(token in lowered for token in _TOTAL_EXCLUSIONS)
         ):
-            value = _last_money(line)
+            value = _labelled_amount(line)
             if value is not None:
                 ctx.total_amount = value
                 ctx.record("total_amount", page_number, line)

@@ -130,6 +130,7 @@ class ExtractionService:
             "tax_rate_percent": _field(ctx.tax_rate_percent, *ev("tax_rate_percent")),
             "tax_inclusive": _field(ctx.tax_inclusive, *ev("tax_inclusive")),
             "discount": _field(ctx.discount, *ev("discount")),
+            "additional_charges": _field(ctx.additional_charges, *ev("additional_charges")),
             "total_amount": _field(ctx.total_amount, *ev("total_amount")),
             "total_quantity": _field(ctx.total_quantity, *ev("total_quantity")),
             "cash_paid": _field(ctx.cash_paid, *ev("cash_paid")),
