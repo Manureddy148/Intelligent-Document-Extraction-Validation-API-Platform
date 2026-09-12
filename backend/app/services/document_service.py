@@ -17,6 +17,7 @@ from app.services.extraction_service import ExtractionService
 from app.services.financial_validation_service import FinancialValidationService
 from app.services.llm_extraction_service import LlmExtractionService
 from app.services.ocr_service import OcrService
+from app.utils.invoice_parsing import InvoiceLineItem
 
 logger = get_logger(__name__)
 
@@ -147,8 +148,13 @@ class DocumentService:
         )
 
         started = time.perf_counter()
+        # An invoice carries one figure per field; "current" is only a sentinel
+        # that lets the validation loop share a shape with the statements. Asking
+        # the model for values per period would return {"current": 126.27} where
+        # the deterministic path returns 126.27.
+        periods = [] if document_type == DocumentType.INVOICE else outcome.periods
         recovered = self.llm_service.recover_missing_fields(
-            document_text, document_type.value, missing, page_images, outcome.periods
+            document_text, document_type.value, missing, page_images, periods
         )
         logger.info(
             "LLM recovery pass (%s) filled %s of %s missing fields in %sms",
@@ -157,7 +163,108 @@ class DocumentService:
         )
         for key, field in recovered.items():
             outcome.extracted_data[key] = field
-        return bool(recovered)
+        self._apply_to_invoice_context(outcome, document_type, recovered)
+
+        recovered_items = self._recover_line_items(outcome, document_type, page_images)
+        return bool(recovered) or recovered_items
+
+    def _apply_to_invoice_context(self, outcome, document_type: DocumentType, recovered: dict) -> None:
+        """Mirror recovered invoice figures onto the context the checks read.
+
+        The invoice checks work from the parsed context rather than the response
+        dict, so a subtotal or tax line the vision pass recovered would
+        otherwise be reported to the caller but invisible to the reconciliation
+        that needs it.
+        """
+        ctx = outcome.invoice_context
+        if document_type != DocumentType.INVOICE or ctx is None:
+            return
+
+        annotations = getattr(type(ctx), "__annotations__", {})
+        # The amount payable is what every other figure is judged against, so it
+        # has to be in place before they are checked.
+        ordered = sorted(recovered.items(), key=lambda kv: kv[0] != "total_amount")
+        for key, field in ordered:
+            if key not in annotations:
+                continue
+            value = field.get("value")
+            declared = annotations[key]
+            wants_number = "float" in str(declared) or "int" in str(declared)
+            # A model can return "10%" for a rate or "RM 9.00" for an amount.
+            # Assigning that to a numeric field turns a later subtraction into a
+            # TypeError and a 500, so only a matching type is mirrored across.
+            if wants_number and not isinstance(value, (int, float)):
+                logger.info("Not mirroring '%s' onto the invoice context: %r is not numeric", key, value)
+                continue
+            if not wants_number and not isinstance(value, str):
+                continue
+            if not self._plausible_invoice_value(ctx, key, value):
+                logger.info("Not mirroring '%s'=%r onto the invoice context: implausible", key, value)
+                continue
+            setattr(ctx, key, value)
+
+    @staticmethod
+    def _plausible_invoice_value(ctx, key: str, value) -> bool:
+        """Reject a recovered figure the invoice itself contradicts.
+
+        Tax and the net subtotal are both parts of the amount payable, so
+        neither can exceed it. One receipt came back with the grand total
+        recovered as the tax line, which then made subtotal + tax overshoot the
+        total and reported the document as inconsistent when the reading was.
+        """
+        total = ctx.total_amount
+        if total is None or not isinstance(value, (int, float)) or total <= 0:
+            return True
+        # Tax is one part of the amount payable, so it cannot reach the whole of
+        # it. A subtotal legitimately can, when nothing is added on top.
+        if key in ("tax_amount", "discount") and value >= total:
+            return False
+        if key == "subtotal" and value > total * 1.01:
+            return False
+        if key == "tax_rate_percent" and not 0 <= value <= 100:
+            return False
+        return True
+
+    def _recover_line_items(self, outcome, document_type: DocumentType, page_images) -> bool:
+        """Read the item table off the page when the parser found no rows.
+
+        Only invoices: a statement's rows come from the section walk, which is
+        driven by the same text the vision pass would be second-guessing.
+        """
+        if document_type != DocumentType.INVOICE or not page_images:
+            return False
+        if outcome.extracted_data.get("line_items"):
+            return False
+
+        items = self.llm_service.recover_line_items(document_type.value, page_images)
+        if not items:
+            return False
+
+        outcome.extracted_data["line_items"] = items
+        # Feed them back into the invoice context so the reconciliation checks
+        # read the same rows that are reported, rather than a second list.
+        if outcome.invoice_context is not None:
+            outcome.invoice_context.line_items = [
+                InvoiceLineItem(
+                    description=row["description"],
+                    quantity=row["quantity"],
+                    unit_price=row["unit_price"],
+                    amount=row["amount"],
+                    page_number=row.get("page_number"),
+                    source_text=row.get("source_text"),
+                )
+                for row in items
+            ]
+            # Reported, but never reconciled. Being shown the whole page is not
+            # proof of having listed every row of it, and on a noisy receipt the
+            # model both misses rows and misreads columns. Summing a list we
+            # cannot confirm is whole would report shortfalls belonging to the
+            # reading rather than to the document - exactly the false finding
+            # this pipeline exists to avoid. The rows still appear in
+            # extracted_data, each marked llm_assisted and carrying the line it
+            # was read from, so an evaluator can check them against the page.
+            outcome.invoice_context.line_items_incomplete = True
+        return True
 
     def get_by_name(self, document_name: str) -> dict | None:
         record = self.repository.get_by_name(document_name)

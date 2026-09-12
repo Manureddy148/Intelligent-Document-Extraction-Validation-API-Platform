@@ -187,3 +187,49 @@ def test_reprocessing_a_name_replaces_rather_than_duplicates(client, blank_pdf_b
         )
     listing = client.get("/api/v1/documents?limit=100").json()
     assert [d["document_name"] for d in listing["documents"]].count("repeat.pdf") == 1
+
+
+def test_non_numeric_recovered_values_never_reach_numeric_fields(client, blank_pdf_bytes, monkeypatch):
+    """A model returning "10%" for a rate must not become a 500 later."""
+    from app.services.document_service import DocumentService
+    from app.schemas.extraction import DocumentType
+
+    service = DocumentService.__new__(DocumentService)
+    from app.utils.invoice_parsing import InvoiceContext
+    from app.services.extraction_service import ExtractionOutcome
+
+    ctx = InvoiceContext()
+    outcome = ExtractionOutcome({}, ["current"], True, 1, {}, ctx)
+    service._apply_to_invoice_context(
+        outcome,
+        DocumentType.INVOICE,
+        {
+            "tax_rate_percent": {"value": "10%"},     # string into a numeric field
+            "subtotal": {"value": 126.27},            # good
+            "vendor_name": {"value": "ACME Ltd"},     # good
+            "total_amount": {"value": "RM 9.00"},     # string into a numeric field
+        },
+    )
+    assert ctx.tax_rate_percent is None
+    assert ctx.total_amount is None
+    assert ctx.subtotal == 126.27
+    assert ctx.vendor_name == "ACME Ltd"
+
+
+def test_recovered_tax_cannot_exceed_the_amount_payable():
+    """A receipt came back with its grand total recovered as the tax line."""
+    from app.services.document_service import DocumentService
+    from app.schemas.extraction import DocumentType
+    from app.services.extraction_service import ExtractionOutcome
+    from app.utils.invoice_parsing import InvoiceContext
+
+    service = DocumentService.__new__(DocumentService)
+    ctx = InvoiceContext()
+    ctx.total_amount = 165.0
+    outcome = ExtractionOutcome({}, ["current"], True, 1, {}, ctx)
+    service._apply_to_invoice_context(
+        outcome, DocumentType.INVOICE,
+        {"tax_amount": {"value": 165.0}, "subtotal": {"value": 105.0}},
+    )
+    assert ctx.tax_amount is None      # cannot be the whole bill
+    assert ctx.subtotal == 105.0       # legitimately below it

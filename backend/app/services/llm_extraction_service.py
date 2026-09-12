@@ -22,15 +22,18 @@ disabled and the pipeline is fully deterministic.
 
 import base64
 import json
+import re
 import time
 import urllib.error
 import urllib.request
 
 from app.core.config import Settings
 from app.core.logging import get_logger
+from app.utils.text_parsing import parse_number
 
 logger = get_logger(__name__)
 
+_WHITESPACE_RE = re.compile(r"\s+")
 _GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 _SYSTEM_PROMPT = (
@@ -62,6 +65,19 @@ class LlmExtractionService:
             return "anthropic"
         return None
 
+    def _provider_chain(self) -> list[str]:
+        """Every configured provider, best first.
+
+        Gemini leads because it reads the page image; Anthropic follows as a
+        text-only second opinion over the OCR output.
+        """
+        chain = []
+        if self.settings.gemini_api_key:
+            chain.append("gemini")
+        if self.settings.llm_api_key:
+            chain.append("anthropic")
+        return chain
+
     @property
     def enabled(self) -> bool:
         return self.provider is not None
@@ -90,20 +106,120 @@ class LlmExtractionService:
             return {}
 
         periods = periods or []
-        try:
-            if self.provider == "gemini":
-                raw = self._call_gemini(
-                    document_text, document_type, missing_fields, page_images or [], periods
-                )
-            else:
-                raw = self._call_anthropic(document_text, document_type, missing_fields, periods)
-        except Exception:
-            # A model outage must never fail a document the deterministic path
-            # already read; the rule-based result stands on its own.
-            logger.exception("LLM-assisted extraction failed; keeping the rule-based result")
+        raw = None
+        for provider in self._provider_chain():
+            try:
+                if provider == "gemini":
+                    raw = self._call_gemini(
+                        document_text, document_type, missing_fields, page_images or [], periods
+                    )
+                else:
+                    raw = self._call_anthropic(document_text, document_type, missing_fields, periods)
+                break
+            except Exception:
+                # A free tier can be exhausted or at capacity for a whole run, so
+                # the fallback that matters is to a different provider, not just
+                # a different model of the same one.
+                logger.exception("Recovery via %s failed; trying the next provider", provider)
+
+        if raw is None:
+            # Whatever went wrong upstream, a document the deterministic path
+            # already read must not fail because of it.
+            logger.warning("No provider could serve the recovery pass; keeping the rule-based result")
             return {}
 
         return self._normalise(raw, missing_fields, periods)
+
+    def recover_line_items(self, document_type: str, page_images: list[bytes]) -> list[dict]:
+        """Read an item table when the rule-based parser found none.
+
+        Noisy receipts defeat row-shape matching: columns run together, the
+        quantity marker is misread, or the table has no header to anchor on. The
+        page itself still shows the table. Only called when no items were found,
+        so a row the parser did read is never replaced by a model's reading.
+        """
+        if self.provider != "gemini" or not page_images:
+            return []
+
+        item_schema = {
+            "type": "object",
+            "properties": {
+                "description": {"type": "string"},
+                "quantity": {"type": "string", "nullable": True},
+                "unit_price": {"type": "string", "nullable": True},
+                "amount": {"type": "string", "nullable": True},
+                "source_text": {"type": "string"},
+                "page_number": {"type": "integer", "nullable": True},
+            },
+            "required": ["description", "quantity", "unit_price", "amount", "source_text"],
+        }
+        instruction = (
+            f"This is a {document_type.replace('_', ' ')}. List the line items in its table, one "
+            "entry per printed row, in order. Copy each figure exactly as shown and quote the row "
+            "it came from in source_text. Use null for a column the row does not show - never "
+            "calculate a missing quantity or unit price from the other columns. Return an empty "
+            "list if the document has no item table."
+        )
+        parts: list[dict] = [{"text": instruction}]
+        for image in page_images[: self.settings.max_pages]:
+            parts.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(image).decode()}})
+
+        body = {
+            "systemInstruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": self.settings.llm_max_tokens,
+                "response_mime_type": "application/json",
+                "response_schema": {"type": "array", "items": item_schema},
+            },
+        }
+        try:
+            payload = self._gemini_request(body)
+        except Exception:
+            logger.exception("Line-item recovery failed; keeping the rule-based result")
+            return []
+
+        rows: list[dict] = []
+        for entry in payload if isinstance(payload, list) else []:
+            if not isinstance(entry, dict):
+                continue
+            description = _WHITESPACE_RE.sub(" ", entry.get("description") or "").strip()
+            source_text = _WHITESPACE_RE.sub(" ", entry.get("source_text") or "").strip()
+            amount = _coerce(entry.get("amount"))
+            # A row with no description, no printed amount, or nothing to trace
+            # it back to is not evidence of a line on the page.
+            if not description or not source_text or not isinstance(amount, (int, float)):
+                continue
+            quantity, unit_price = _coerce(entry.get("quantity")), _coerce(entry.get("unit_price"))
+            quantity = quantity if isinstance(quantity, (int, float)) else None
+            unit_price = unit_price if isinstance(unit_price, (int, float)) else None
+            # The same rule the rule-based parser uses: if quantity x rate does
+            # not come out near the printed amount, the columns were read wrong.
+            # The amount is what the page shows, so it is kept; asserting a
+            # quantity and rate that do not multiply out would report a
+            # discrepancy belonging to the reading, not to the document.
+            if quantity is not None and unit_price is not None:
+                product = quantity * unit_price
+                if product <= 0 or not 0.8 <= product / amount <= 1.25:
+                    logger.info(
+                        "Dropping quantity/rate for '%s': %s x %s does not reach %s",
+                        description[:40], quantity, unit_price, amount,
+                    )
+                    quantity = unit_price = None
+            rows.append(
+                {
+                    "description": description,
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "amount": amount,
+                    "page_number": entry.get("page_number"),
+                    "source_text": source_text,
+                    "extraction_method": "llm_assisted",
+                }
+            )
+        logger.info("Line-item recovery read %s rows from the page", len(rows))
+        return rows
 
     # ---- prompt and schema ------------------------------------------------
 
@@ -212,17 +328,23 @@ class LlmExtractionService:
                 "response_schema": self._build_schema(missing_fields, periods, for_gemini=True),
             },
         }
+        return self._gemini_request(body)
+
+    def _gemini_request(self, body: dict):
+        """Send one request, retrying and falling through the model chain.
+
+        Shared by the field and line-item passes: both need the same handling of
+        a free tier that is routinely at capacity.
+        """
         headers = {
             "Content-Type": "application/json",
             # Header rather than a query parameter so the key stays out of
             # request logs and proxy access logs.
             "x-goog-api-key": self.settings.gemini_api_key or "",
         }
-        # A free-tier model can be at capacity for minutes at a time, and a
-        # document should not lose its recovery pass because one model is busy.
         # Retries across several models compound: one document spent 134s in
         # here while the free tier was busy. The whole pass gets one budget, and
-        # the document falls back to its deterministic result when that runs out.
+        # the document falls back to its deterministic result when it runs out.
         deadline = time.monotonic() + self.settings.llm_total_budget_seconds
         payload, model_used = None, None
         for model in self._model_chain():
@@ -231,9 +353,7 @@ class LlmExtractionService:
                             self.settings.llm_total_budget_seconds)
                 break
             try:
-                payload = self._post_json(
-                    _GEMINI_ENDPOINT.format(model=model), body, headers, deadline
-                )
+                payload = self._post_json(_GEMINI_ENDPOINT.format(model=model), body, headers, deadline)
                 model_used = model
                 break
             except Exception as exc:
@@ -249,11 +369,10 @@ class LlmExtractionService:
             raise ValueError(f"Gemini returned no candidates: {json.dumps(payload)[:300]}")
         # A truncated answer is invalid JSON, and the decoder's "unterminated
         # string" says nothing about the cause; name it instead.
-        finish_reason = candidates[0].get("finishReason")
-        if finish_reason == "MAX_TOKENS":
+        if candidates[0].get("finishReason") == "MAX_TOKENS":
             raise ValueError(
-                f"Vision model hit the {self.settings.llm_max_tokens}-token output limit "
-                f"reading {len(missing_fields)} fields; raise IDEV_LLM_MAX_TOKENS"
+                f"Vision model hit the {self.settings.llm_max_tokens}-token output limit; "
+                "raise IDEV_LLM_MAX_TOKENS"
             )
         text = "".join(part.get("text", "") for part in candidates[0]["content"]["parts"])
         return json.loads(text)
@@ -348,15 +467,19 @@ class LlmExtractionService:
 
 
 def _coerce(value):
-    """Gemini returns every scalar as a string; restore numbers to numbers."""
+    """Gemini returns every scalar as a string; restore numbers to numbers.
+
+    Parsed with the same reader the deterministic path uses, so bracketed
+    negatives and comma decimals are handled identically. A European invoice
+    printing "5,00" means five, and stripping the comma as a thousands
+    separator would report five hundred.
+    """
     if not isinstance(value, str):
         return value
-    cleaned = value.strip().replace(",", "")
-    negative = cleaned.startswith("(") and cleaned.endswith(")")
-    cleaned = cleaned.strip("()")
-    try:
-        number = float(cleaned)
-    except ValueError:
-        return value.strip()
-    number = -number if negative else number
-    return int(number) if number.is_integer() and abs(number) < 1e15 else number
+    text = _WHITESPACE_RE.sub(" ", value).strip()
+    if not text:
+        return None
+    number = parse_number(text)
+    if number is None:
+        return text
+    return int(number) if float(number).is_integer() and abs(number) < 1e15 else number

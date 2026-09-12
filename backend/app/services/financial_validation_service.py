@@ -171,6 +171,7 @@ class FinancialValidationService:
         checks: list[ValidationCheck] = []
         if ctx is None:
             return checks
+        self._drop_self_contradictory_figures(ctx)
 
         for index, item in enumerate(ctx.line_items, start=1):
             checks.append(
@@ -272,6 +273,25 @@ class FinancialValidationService:
         return checks
 
     # ---- Balance sheet ----------------------------------------------------
+
+    @staticmethod
+    def _drop_self_contradictory_figures(ctx: InvoiceContext) -> None:
+        """Discard a figure the invoice's own total rules out, whoever read it.
+
+        Tax and any discount are parts of the amount payable, so neither can
+        reach the whole of it: a receipt whose "tax" equals its total has had
+        its total read twice, not charged 100% tax. Reporting that as a failed
+        reconciliation would blame the document for a misreading. The field is
+        reported as null instead, and the check becomes NOT_APPLICABLE.
+        """
+        total = ctx.total_amount
+        if total is None or total <= 0:
+            return
+        for field in ("tax_amount", "discount"):
+            value = getattr(ctx, field, None)
+            if isinstance(value, (int, float)) and value >= total:
+                logger.info("Discarding %s=%s: it is not less than the total of %s", field, value, total)
+                setattr(ctx, field, None)
 
     def _validate_balance_sheet(self, outcome: ExtractionOutcome) -> list[ValidationCheck]:
         checks: list[ValidationCheck] = []

@@ -655,3 +655,98 @@ def test_vision_pass_stops_at_its_time_budget(monkeypatch):
     assert service.recover_missing_fields("text", "invoice", ["total_amount"], [b"png"]) == {}
     assert calls == []  # budget already spent, so no model was tried
     assert _time.perf_counter() - started < 1
+
+
+def test_llm_values_use_the_same_number_reader_as_the_parser():
+    """A European invoice prints "5,00" for five; stripping the comma gives 500."""
+    from app.services.llm_extraction_service import _coerce
+
+    assert _coerce("5,00") == 5
+    assert _coerce("3,49") == 3.49
+    assert _coerce("1,234.56") == 1234.56
+    assert _coerce("1,558,003.03") == 1558003.03
+    assert _coerce("(1,234)") == -1234
+    assert _coerce("ABC Traders") == "ABC Traders"
+    assert _coerce("  multi\nline  ") == "multi line"
+
+
+def test_recovered_line_items_must_be_grounded_and_have_an_amount(monkeypatch):
+    from app.services.llm_extraction_service import LlmExtractionService
+
+    service = LlmExtractionService(Settings(gemini_api_key="k"))
+    monkeypatch.setattr(
+        service,
+        "_gemini_request",
+        lambda body: [
+            {"description": "Widget", "quantity": "2", "unit_price": "5,00",
+             "amount": "10,00", "source_text": "Widget 2 5,00 10,00"},
+            {"description": "No source", "quantity": "1", "unit_price": "1",
+             "amount": "1", "source_text": "  "},          # ungrounded
+            {"description": "No amount", "quantity": "1", "unit_price": "1",
+             "amount": None, "source_text": "row"},         # nothing printed
+        ],
+    )
+    rows = service.recover_line_items("invoice", [b"png"])
+    assert len(rows) == 1
+    assert (rows[0]["quantity"], rows[0]["unit_price"], rows[0]["amount"]) == (2, 5, 10)
+    assert rows[0]["extraction_method"] == "llm_assisted"
+
+
+def test_recovery_falls_through_to_the_second_provider(monkeypatch):
+    """A free tier can be exhausted for a whole run, not just one call."""
+    from app.services.llm_extraction_service import LlmExtractionService
+
+    service = LlmExtractionService(Settings(gemini_api_key="g", llm_api_key="a"))
+    assert service._provider_chain() == ["gemini", "anthropic"]
+
+    tried = []
+
+    def gemini_down(*a, **k):
+        tried.append("gemini")
+        raise RuntimeError("429 quota exhausted")
+
+    monkeypatch.setattr(service, "_call_gemini", gemini_down)
+    monkeypatch.setattr(
+        service,
+        "_call_anthropic",
+        lambda *a, **k: tried.append("anthropic")
+        or {"total_amount": {"value": 9.0, "page_number": 1, "source_text": "Total 9.00"}},
+    )
+    recovered = service.recover_missing_fields("text", "invoice", ["total_amount"], [b"png"])
+    assert tried == ["gemini", "anthropic"]
+    assert recovered["total_amount"]["value"] == 9.0
+
+
+def test_recovery_returns_nothing_when_every_provider_is_down(monkeypatch):
+    from app.services.llm_extraction_service import LlmExtractionService
+
+    service = LlmExtractionService(Settings(gemini_api_key="g", llm_api_key="a"))
+    for name in ("_call_gemini", "_call_anthropic"):
+        monkeypatch.setattr(service, name, lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+    assert service.recover_missing_fields("text", "invoice", ["total_amount"], [b"png"]) == {}
+
+
+def test_a_tax_equal_to_the_total_is_discarded_not_reported_as_a_discrepancy():
+    """A receipt whose "tax" equals its total has had its total read twice."""
+    from app.utils.invoice_parsing import InvoiceContext
+
+    ctx = InvoiceContext()
+    ctx.subtotal, ctx.tax_amount, ctx.total_amount = 165.0, 165.0, 165.0
+    outcome = ExtractionOutcome({}, ["current"], True, 1, {}, ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+
+    assert ctx.tax_amount is None
+    total_check = [c for c in result.checks if c.name == "invoice_total_check"]
+    assert all(c.status != ValidationStatus.FAIL for c in total_check)
+
+
+def test_a_real_tax_line_survives():
+    from app.utils.invoice_parsing import InvoiceContext
+
+    ctx = InvoiceContext()
+    ctx.subtotal, ctx.tax_amount, ctx.total_amount = 100.0, 6.0, 106.0
+    outcome = ExtractionOutcome({}, ["current"], True, 1, {}, ctx)
+    result = FinancialValidationService(get_settings()).validate(DocumentType.INVOICE, outcome)
+    assert ctx.tax_amount == 6.0
+    check = next(c for c in result.checks if c.name == "invoice_total_check")
+    assert check.status == ValidationStatus.PASS
