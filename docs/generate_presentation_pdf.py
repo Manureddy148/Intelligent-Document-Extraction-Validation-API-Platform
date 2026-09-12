@@ -220,14 +220,14 @@ def slide_validation(c):
 
 
 def slide_results(c):
-    heading(c, "Measured results", "All 50 documents in the provided dataset, 297 checks")
+    heading(c, "Measured results", "All 50 documents, 306 checks, with the Gemini vision pass")
     rows = [
-        ("Balance sheet", 45, 0, 15),
-        ("Profit & loss", 76, 0, 24),
-        ("Cash flow", 32, 0, 8),
-        ("Invoice", 27, 2, 20),
+        ("Balance sheet", 49, 0, 11),
+        ("Profit & loss", 96, 0, 4),
+        ("Cash flow", 37, 0, 3),
+        ("Invoice", 29, 2, 25),
     ]
-    max_value = 76
+    max_value = 96
     base_y, chart_h, bar_w = 150, 210, 26
     c.setFillColor(MUTED)
     c.setFont(SANS, 9)
@@ -253,9 +253,9 @@ def slide_results(c):
         c.drawString(106 + j * 130, 108, name)
 
     stats = [
-        ("228", "checks reconcile exactly", PASS),
+        ("261", "checks reconcile exactly", PASS),
         ("2", "genuine discrepancies, verified by hand", FAIL),
-        ("67", "not applicable — nothing to reconcile", NA),
+        ("43", "not applicable — nothing to reconcile", NA),
     ]
     for i, (n, label, colour) in enumerate(stats):
         y = 340 - i * 84
